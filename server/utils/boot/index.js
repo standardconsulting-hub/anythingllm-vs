@@ -29,8 +29,14 @@ function bootSSL(app, port = 3001) {
     const credentials = { key: privateKey, cert: certificate };
     const server = https.createServer(credentials, app);
 
+    // vs-fork: hard-code 127.0.0.1 as the bind host. Upstream calls
+    // `.listen(port, ...)` with no host argument, which Node defaults
+    // to 0.0.0.0 (all interfaces). The VS Declaration runs behind
+    // Tailscale Serve, which publishes 127.0.0.1 to the tailnet; the
+    // server itself must never bind to a public interface, even if
+    // a misconfigured .env tried to ask it to.
     server
-      .listen(port, async () => {
+      .listen(port, "127.0.0.1", async () => {
         await markOnboarded();
         await setupTelemetry();
         new CommunicationKey(true);
@@ -39,7 +45,7 @@ function bootSSL(app, port = 3001) {
         await eagerLoadContextWindows();
         await PushNotifications.setupPushNotificationService();
         await TelegramBotService.bootIfActive();
-        console.log(`Primary server in HTTPS mode listening on port ${port}`);
+        console.log(`Primary server in HTTPS mode listening on 127.0.0.1:${port}`);
       })
       .on("error", catchSigTerms);
 
@@ -62,8 +68,9 @@ function bootSSL(app, port = 3001) {
 function bootHTTP(app, port = 3001) {
   if (!app) throw new Error('No "app" defined - crashing!');
 
+  // vs-fork: see comment in bootSSL above. Hard-code 127.0.0.1.
   app
-    .listen(port, async () => {
+    .listen(port, "127.0.0.1", async () => {
       await markOnboarded();
       await setupTelemetry();
       new CommunicationKey(true);
@@ -72,7 +79,7 @@ function bootHTTP(app, port = 3001) {
       await eagerLoadContextWindows();
       await PushNotifications.setupPushNotificationService();
       await TelegramBotService.bootIfActive();
-      console.log(`Primary server in HTTP mode listening on port ${port}`);
+      console.log(`Primary server in HTTP mode listening on 127.0.0.1:${port}`);
     })
     .on("error", catchSigTerms);
 
