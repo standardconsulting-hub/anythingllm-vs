@@ -71,6 +71,14 @@ model users {
   dailyMessageLimit            Int?
   bio                          String?                       @default("")
   web_push_subscription_config String?
+  // vs-fork: MFA + session columns (Plan 1.5 v1.2.1 Task 1)
+  totp_secret_ciphertext       String?
+  totp_verified_at             DateTime?
+  totp_last_used_counter       BigInt?
+  mfa_lockout_until            DateTime?
+  mfa_failed_attempt_count     Int                           @default(0)
+  mfa_failed_window_start      DateTime?
+  must_rotate_password         Boolean                       @default(false)
   workspace_chats              workspace_chats[]
   workspace_users              workspace_users[]
   embed_configs                embed_configs[]
@@ -86,6 +94,72 @@ model users {
   prompt_history               prompt_history[]
   desktop_mobile_devices       desktop_mobile_devices[]
   workspace_parsed_files       workspace_parsed_files[]
+  // vs-fork: MFA + session relations (Plan 1.5 v1.2.1 Task 1)
+  user_sessions                user_sessions[]
+  user_backup_codes            user_backup_codes[]
+  mfa_challenge_nonces         mfa_challenge_nonces[]
+}
+
+// vs-fork: per-session activity + revocation row. JWT jti is
+// the row id (ULID). Plan 1.5 v1.2.1 Task 1.
+model user_sessions {
+  id                String    @id
+  user_id           Int
+  last_activity_at  DateTime
+  last_step_up_at   DateTime?
+  revoked_at        DateTime?
+  revocation_reason String?
+  user_agent        String?
+  remote_ip         String?
+  created_at        DateTime  @default(now())
+  expires_at        DateTime
+  user              users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([user_id, revoked_at])
+  @@index([expires_at])
+}
+
+// vs-fork: one row per backup code so consumption is an atomic
+// UPDATE WHERE used_at IS NULL. Plan 1.5 v1.2.1 Task 1.
+model user_backup_codes {
+  id         Int       @id @default(autoincrement())
+  user_id    Int
+  code_hash  String
+  used_at    DateTime?
+  created_at DateTime  @default(now())
+  user       users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([user_id, used_at])
+}
+
+// vs-fork: append-only attempt log; rate-limiter source of
+// truth. Plan 1.5 v1.2.1 Task 1.
+model mfa_attempt_log {
+  id         Int      @id @default(autoincrement())
+  user_id    Int?
+  remote_ip  String?
+  outcome    String
+  created_at DateTime @default(now())
+
+  @@index([user_id, created_at])
+}
+
+// vs-fork: single-use challenge JWT jti store. atomic consume
+// via UPDATE WHERE consumed_at IS NULL AND expires_at > now()
+// AND aud = ?. Plan 1.5 v1.2.1 Task 1.
+model mfa_challenge_nonces {
+  jti         String    @id
+  user_id     Int
+  aud         String
+  expires_at  DateTime
+  consumed_at DateTime?
+  created_at  DateTime  @default(now())
+  remote_ip   String?
+  user_agent  String?
+  user        users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([user_id, consumed_at])
+  @@index([expires_at])
 }
 
 model recovery_codes {
