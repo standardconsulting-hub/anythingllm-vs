@@ -41,6 +41,8 @@ const {
 const {
   googleAgentSkillEndpoints,
 } = require("./endpoints/utils/googleAgentSkillEndpoints");
+// vs-fork: MFA endpoints under /api/auth/mfa/. Plan 1.5 v1.2.1 Task 3.
+const { mfaEndpoints } = require("./endpoints/auth/mfa");
 const { httpLogger } = require("./middleware/httpLogger");
 const app = express();
 const apiRouter = express.Router();
@@ -75,6 +77,8 @@ if (!!process.env.ENABLE_HTTPS) {
 
 app.use("/api", apiRouter);
 systemEndpoints(apiRouter);
+// vs-fork: register MFA endpoints. Plan 1.5 v1.2.1 Task 3.
+mfaEndpoints(apiRouter);
 extensionEndpoints(apiRouter);
 workspaceEndpoints(apiRouter);
 workspaceThreadEndpoints(apiRouter);
