@@ -24,6 +24,10 @@ const {
   ROLES,
 } = require("../utils/middleware/multiUserProtected");
 const { validatedRequest } = require("../utils/middleware/validatedRequest");
+// vs-fork: Plan 1.5 v1.2.1 Task 11 — admin user-mutation endpoints
+// (the multi-user equivalent of "change password") require a
+// TOTP step-up within the last 5 minutes.
+const { requireFreshStepUp } = require("../utils/middleware/requireTotp");
 const ImportedPlugin = require("../utils/agents/imported");
 const {
   simpleSSOLoginDisabledMiddleware,
@@ -84,7 +88,13 @@ function adminEndpoints(app) {
 
   app.post(
     "/admin/user/:id",
-    [validatedRequest, strictMultiUserRoleValid([ROLES.admin, ROLES.manager])],
+    // vs-fork: Plan 1.5 v1.2.1 Task 11. Multi-user user mutation
+    // (incl. password change) requires step-up within 5 minutes.
+    [
+      validatedRequest,
+      strictMultiUserRoleValid([ROLES.admin, ROLES.manager]),
+      requireFreshStepUp(5),
+    ],
     async (request, response) => {
       try {
         const currUser = await userFromSession(request, response);

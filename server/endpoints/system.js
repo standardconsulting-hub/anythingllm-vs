@@ -17,6 +17,9 @@ const { v4 } = require("uuid");
 const { SystemSettings } = require("../models/systemSettings");
 const { User } = require("../models/user");
 const { validatedRequest } = require("../utils/middleware/validatedRequest");
+// vs-fork: Plan 1.5 v1.2.1 Task 11 — sensitive endpoints (e.g.
+// PII export) require a TOTP step-up within the last 5 minutes.
+const { requireFreshStepUp } = require("../utils/middleware/requireTotp");
 const fs = require("fs");
 const path = require("path");
 const {
@@ -1188,6 +1191,11 @@ function systemEndpoints(app) {
       chatHistoryViewable,
       validatedRequest,
       flexUserRoleValid([ROLES.manager, ROLES.admin]),
+      // vs-fork: Plan 1.5 v1.2.1 Task 11. PII export — require
+      // step-up within 5 minutes. validatedRequest has already
+      // populated res.locals.session in multi-user mode; the
+      // single-user passthrough branch is COFA-trusted by design.
+      requireFreshStepUp(5),
     ],
     async (request, response) => {
       try {
