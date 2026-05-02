@@ -111,7 +111,10 @@ describe("revoke-user-sessions.js (in-process)", () => {
 });
 
 describe("revoke-user-sessions.js (subprocess)", () => {
-  it("prompts for DELETE, executes on match, exits 0", async () => {
+  // Final-Codex FLAG fix: non-TTY stdin requires explicit
+  // VS_RECOVERY_AUTOCONFIRM=1.
+
+  it("refuses non-TTY stdin without VS_RECOVERY_AUTOCONFIRM (exits 1)", async () => {
     const { user } = await makeMfaUser();
     const child = spawn(
       process.execPath,
@@ -129,12 +132,36 @@ describe("revoke-user-sessions.js (subprocess)", () => {
     );
     child.stdin.write("DELETE\n");
     child.stdin.end();
+    let stderr = "";
+    child.stderr.on("data", (d) => (stderr += d.toString()));
+    const code = await new Promise((r) => child.on("close", r));
+    expect(code).toBe(1);
+    expect(stderr).toMatch(/non-TTY/);
+  }, 20_000);
+
+  it("with VS_RECOVERY_AUTOCONFIRM=1 the subprocess executes and exits 0", async () => {
+    const { user } = await makeMfaUser();
+    const child = spawn(
+      process.execPath,
+      [
+        path.resolve(__dirname, "..", "revoke-user-sessions.js"),
+        String(user.id),
+      ],
+      {
+        cwd: path.resolve(__dirname, "..", ".."),
+        env: {
+          ...process.env,
+          VS_RECOVERY_LOG_PATH: process.env.VS_RECOVERY_LOG_PATH,
+          VS_RECOVERY_AUTOCONFIRM: "1",
+        },
+      }
+    );
+    child.stdin.end();
     let stdout = "";
     child.stdout.on("data", (d) => (stdout += d.toString()));
     const code = await new Promise((r) => child.on("close", r));
     expect(code).toBe(0);
     expect(stdout).toMatch(/sessions revoked/i);
-
     const after = await prisma.users.findUnique({ where: { id: user.id } });
     expect(after.must_rotate_password).toBe(true);
     expect(after.totp_secret_ciphertext).toBe("ciphertext-bytes");

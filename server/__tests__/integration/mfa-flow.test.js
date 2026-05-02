@@ -507,10 +507,12 @@ describe("Plan 1.5 integration: full MFA + idle-timeout flow", () => {
         env: {
           ...process.env,
           VS_RECOVERY_LOG_PATH: process.env.VS_RECOVERY_LOG_PATH,
+          // Final-Codex FLAG fix: scripts now refuse non-TTY
+          // stdin unless this autoconfirm var is set.
+          VS_RECOVERY_AUTOCONFIRM: "1",
         },
       }
     );
-    child.stdin.write("DELETE\n");
     child.stdin.end();
     let stdout = "";
     child.stdout.on("data", (d) => (stdout += d.toString()));

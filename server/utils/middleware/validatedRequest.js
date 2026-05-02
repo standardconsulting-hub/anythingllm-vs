@@ -13,11 +13,15 @@ const { SESSION_IDLE_MS } = require("./idleTimeout");
 const EncryptionMgr = new EncryptionManager();
 
 // Endpoints that a user with must_rotate_password=true can still
-// reach. Add to this list when introducing new password-rotation
-// surfaces. (Plan 1.5 v1.2.1 Task 4.)
+// reach. Plan 1.5 final-Codex BLOCK 2: must_rotate_password is set
+// by the recovery scripts and the lost-device revoke-all flow.
+// /auth/rotate-password is the *only* surface that can clear the
+// flag — it requires fresh step-up. The earlier list included
+// /system/update-password (single-user-mode-only; rejects in
+// multi-user) and /system/user (too broad — would have allowed
+// username/bio edits while gated). Both removed.
 const ROTATE_PASSWORD_ALLOWED_PATHS = new Set([
-  "/api/system/update-password",
-  "/api/system/user",
+  "/api/auth/rotate-password",
 ]);
 
 async function validatedRequest(request, response, next) {
@@ -171,7 +175,14 @@ async function validateMultiUserRequest(request, response, next) {
   response.locals.session = session;
 
   // vs-fork: enforce 15-minute per-session idle timeout in the
-  // same auth pass. Plan 1.5 v1.2.1 Task 5.
+  // same auth pass. Plan 1.5 v1.2.1 Task 5; final-Codex FLAG: the
+  // earlier read-then-touch was non-atomic — a concurrent revoke
+  // (e.g. lost-device button on another tab) could land between
+  // the read and the touch, letting one in-flight request through.
+  // Fix: pre-check idle, then take the touch's ok/false as the
+  // authoritative liveness signal. UserSession.touch's UPDATE
+  // already requires `revoked_at IS NULL AND expires_at > now`,
+  // so a revoked-or-expired session will return ok:false here.
   const lastActivityMs = session.last_activity_at
     ? new Date(session.last_activity_at).getTime()
     : null;
@@ -183,7 +194,14 @@ async function validateMultiUserRequest(request, response, next) {
     });
     return;
   }
-  await UserSession.touch(session.id);
+  const touch = await UserSession.touch(session.id);
+  if (!touch.ok) {
+    response.status(401).json({
+      error: "session_expired",
+      needs_totp: true,
+    });
+    return;
+  }
   next();
 }
 

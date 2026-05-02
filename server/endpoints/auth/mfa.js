@@ -472,6 +472,50 @@ function mfaEndpoints(app) {
     }
   );
 
+  // ----- POST /api/auth/rotate-password -----
+  // Plan 1.5 Codex final-review BLOCK 2 closure: the only path
+  // that can clear must_rotate_password=true. Recovery scripts
+  // and the lost-device revoke-all set the flag; this endpoint
+  // is on the validatedRequest allow-list so the user can reach
+  // it while gated. Requires fresh step-up (5 min) so a stolen
+  // session can't rotate immediately on hijack — the implicit
+  // step-up granted at /challenge means the user has 5 minutes
+  // from login to complete the rotation.
+  app.post(
+    "/auth/rotate-password",
+    [requireFullAuth, requireFreshStepUp(5)],
+    async (req, res) => {
+      try {
+        const userId = res.locals.user.id;
+        const { new_password } = reqBody(req) || {};
+        if (!new_password || typeof new_password !== "string") {
+          return res.status(400).json({ error: "missing_new_password" });
+        }
+        const { User } = require("../../models/user");
+        const complexity = User.checkPasswordComplexity(new_password);
+        if (!complexity.checkedOK) {
+          return res.status(400).json({
+            error: "password_complexity",
+            reason: complexity.error,
+          });
+        }
+        const bcrypt = require("bcryptjs");
+        await prisma.users.update({
+          where: { id: userId },
+          data: {
+            password: bcrypt.hashSync(new_password, 10),
+            must_rotate_password: false,
+          },
+        });
+        res.set(NO_STORE);
+        return res.status(200).json({ rotated: true });
+      } catch (e) {
+        console.error("[auth/rotate-password]", e);
+        return res.status(500).json({ error: "internal_error" });
+      }
+    }
+  );
+
   // ----- POST /api/auth/mfa/sessions/revoke-all -----
   // Operator-driven lost-device action. Mirrors disable-mfa
   // semantics on must_rotate_password but keeps the MFA secret +

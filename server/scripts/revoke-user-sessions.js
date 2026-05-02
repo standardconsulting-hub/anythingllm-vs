@@ -39,6 +39,15 @@ function appendRecoveryEvent(event) {
 }
 
 async function promptDelete() {
+  // Plan 1.5 final-Codex FLAG: refuse to read confirmation from
+  // a non-TTY unless VS_RECOVERY_AUTOCONFIRM=1 is set explicitly.
+  if (!process.stdin.isTTY) {
+    console.error(
+      "error: refusing to read DELETE confirmation from a non-TTY. " +
+        "Run interactively, or set VS_RECOVERY_AUTOCONFIRM=1 explicitly."
+    );
+    return false;
+  }
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,

@@ -107,9 +107,15 @@ module.exports = {
   },
 
   generateBackupCodes(n = 10) {
-    return Array.from({ length: n }, () =>
-      crypto.randomBytes(5).toString("hex")
-    );
+    // Final-Codex NIT fix: dedup via Set to make plaintext
+    // duplicates structurally impossible. 10 codes from a
+    // 2^40 space have a vanishing collision probability, but
+    // the Set guarantee is cheap and removes the assumption.
+    const out = new Set();
+    while (out.size < n) {
+      out.add(crypto.randomBytes(5).toString("hex"));
+    }
+    return Array.from(out);
   },
 
   async hashBackupCodes(codes) {

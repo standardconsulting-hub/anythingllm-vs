@@ -161,7 +161,7 @@ describe("validatedRequest (multi-user mode)", () => {
     expect(res.json.mock.calls[0][0].error).toBe("must_rotate_password");
   });
 
-  it("permits must_rotate_password=true on /api/system/update-password", async () => {
+  it("permits must_rotate_password=true on /api/auth/rotate-password (final-Codex BLOCK 2)", async () => {
     const u = await makeUser({
       totp_verified_at: new Date(),
       must_rotate_password: true,
@@ -178,14 +178,42 @@ describe("validatedRequest (multi-user mode)", () => {
     await validatedRequest(
       fakeReq({
         token,
-        path: "/api/system/update-password",
-        originalUrl: "/api/system/update-password",
+        path: "/api/auth/rotate-password",
+        originalUrl: "/api/auth/rotate-password",
       }),
       res,
       next
     );
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("rejects must_rotate_password=true on /api/system/user (no longer allow-listed)", async () => {
+    const u = await makeUser({
+      totp_verified_at: new Date(),
+      must_rotate_password: true,
+    });
+    testUserIds.push(u.id);
+    const session = await UserSession.create({ userId: u.id });
+    const token = issueSessionToken({
+      userId: u.id,
+      sessionId: session.id,
+      expiresAt: session.expires_at,
+    });
+    const next = jest.fn();
+    const res = fakeRes();
+    await validatedRequest(
+      fakeReq({
+        token,
+        path: "/api/system/user",
+        originalUrl: "/api/system/user",
+      }),
+      res,
+      next
+    );
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json.mock.calls[0][0].error).toBe("must_rotate_password");
+    expect(next).not.toHaveBeenCalled();
   });
 
   it("populates res.locals.user and res.locals.session on success", async () => {

@@ -419,6 +419,67 @@ describe("MFA endpoints", () => {
     });
   });
 
+  describe("POST /api/auth/rotate-password (final-Codex BLOCK 2 closure)", () => {
+    it("requires step-up; without it returns 403 needs_step_up", async () => {
+      const u = await makeUser({
+        totp_verified_at: new Date(),
+        must_rotate_password: true,
+      });
+      testUserIds.push(u.id);
+      const { headers } = await fullAuthHeaders(u); // no markStepUp
+      const r = await app.invoke("POST", "/auth/rotate-password", {
+        headers,
+        body: { new_password: "another-good-password-1" },
+      });
+      expect(r.statusCode).toBe(403);
+      expect(r.body.error).toBe("needs_step_up");
+    });
+
+    it("with fresh step-up: clears must_rotate_password and updates the password hash", async () => {
+      const bcrypt = require("bcryptjs");
+      const u = await makeUser({
+        password: bcrypt.hashSync("old-pwd-original", 10),
+        totp_verified_at: new Date(),
+        must_rotate_password: true,
+      });
+      testUserIds.push(u.id);
+      const { headers, session } = await fullAuthHeaders(u);
+      await UserSession.markStepUp(session.id);
+      const r = await app.invoke("POST", "/auth/rotate-password", {
+        headers,
+        body: { new_password: "another-good-password-1" },
+      });
+      expect(r.statusCode).toBe(200);
+      expect(r.body.rotated).toBe(true);
+      const after = await prisma.users.findUnique({ where: { id: u.id } });
+      expect(after.must_rotate_password).toBe(false);
+      expect(bcrypt.compareSync("another-good-password-1", after.password)).toBe(true);
+      expect(bcrypt.compareSync("old-pwd-original", after.password)).toBe(false);
+    });
+
+    it("rejects on missing or malformed new_password", async () => {
+      const u = await makeUser({
+        totp_verified_at: new Date(),
+        must_rotate_password: true,
+      });
+      testUserIds.push(u.id);
+      const { headers, session } = await fullAuthHeaders(u);
+      await UserSession.markStepUp(session.id);
+      const r1 = await app.invoke("POST", "/auth/rotate-password", {
+        headers,
+        body: {},
+      });
+      expect(r1.statusCode).toBe(400);
+      expect(r1.body.error).toBe("missing_new_password");
+      const r2 = await app.invoke("POST", "/auth/rotate-password", {
+        headers,
+        body: { new_password: "x" }, // too short for default complexity
+      });
+      expect(r2.statusCode).toBe(400);
+      expect(r2.body.error).toBe("password_complexity");
+    });
+  });
+
   describe("Cross-endpoint replay (BLOCK #2 closure proof)", () => {
     it("same code submitted to /challenge and /step-up in parallel — only one wins", async () => {
       // Set up an enrolled user with a session and cached TOTP state.

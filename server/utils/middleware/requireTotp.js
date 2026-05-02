@@ -59,9 +59,14 @@ async function requireFullAuth(req, res, next) {
       .status(403)
       .json({ error: "needs_enrolment", needs_enrolment: true });
   }
+  // Plan 1.5 final-Codex BLOCK 2: only /api/auth/rotate-password
+  // can clear must_rotate_password. The earlier suffix check
+  // ("/change-password") matched a non-existent endpoint and
+  // would have locked out users permanently.
   if (
     user.must_rotate_password === true &&
-    !req.path?.endsWith("/change-password")
+    !(req.path?.endsWith("/auth/rotate-password") ||
+      req.originalUrl?.split("?")[0] === "/api/auth/rotate-password")
   ) {
     return res.status(403).json({ error: "must_rotate_password" });
   }
@@ -69,6 +74,9 @@ async function requireFullAuth(req, res, next) {
   // vs-fork: 15-minute per-session idle timeout (Plan 1.5 v1.2.1
   // Task 5). Same enforcement as validatedRequest so MFA-aware
   // routes (the requireFullAuth chain) are equally protected.
+  // Final-Codex FLAG fix: take the touch's ok/false as the
+  // authoritative liveness signal so a concurrent revoke can't
+  // race past the idle check.
   const lastActivityMs = session.last_activity_at
     ? new Date(session.last_activity_at).getTime()
     : null;
@@ -78,7 +86,12 @@ async function requireFullAuth(req, res, next) {
       .status(401)
       .json({ error: "session_expired", needs_totp: true });
   }
-  await UserSession.touch(session.id);
+  const touch = await UserSession.touch(session.id);
+  if (!touch.ok) {
+    return res
+      .status(401)
+      .json({ error: "session_expired", needs_totp: true });
+  }
 
   res.locals.user = user;
   res.locals.session = session;

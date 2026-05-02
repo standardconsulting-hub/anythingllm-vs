@@ -47,6 +47,18 @@ function appendRecoveryEvent(event) {
 }
 
 async function promptDelete() {
+  // Plan 1.5 final-Codex FLAG: refuse to run from a non-TTY
+  // unless the operator has explicitly opted into the test
+  // harness via VS_RECOVERY_AUTOCONFIRM=1. Otherwise
+  // `echo DELETE | node disable-mfa.js …` would silently
+  // bypass the safety prompt.
+  if (!process.stdin.isTTY) {
+    console.error(
+      "error: refusing to read DELETE confirmation from a non-TTY. " +
+        "Run interactively, or set VS_RECOVERY_AUTOCONFIRM=1 explicitly."
+    );
+    return false;
+  }
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
