@@ -4,9 +4,12 @@ const { EncryptionManager } = require("../EncryptionManager");
 const { decodeJWT } = require("../http");
 // vs-fork: Plan 1.5 v1.2.1 Task 4 — validate session JWTs against
 // the user_sessions row + reject challenge tokens reaching
-// protected routes.
+// protected routes. Task 5 — also enforces 15-min idle timeout
+// in the same pass (revokes the session row + 401 session_expired
+// on idle-out).
 const { verifySessionToken } = require("../auth/mfaTokens");
 const { UserSession } = require("../../models/userSession");
+const { SESSION_IDLE_MS } = require("./idleTimeout");
 const EncryptionMgr = new EncryptionManager();
 
 // Endpoints that a user with must_rotate_password=true can still
@@ -166,6 +169,21 @@ async function validateMultiUserRequest(request, response, next) {
 
   response.locals.user = user;
   response.locals.session = session;
+
+  // vs-fork: enforce 15-minute per-session idle timeout in the
+  // same auth pass. Plan 1.5 v1.2.1 Task 5.
+  const lastActivityMs = session.last_activity_at
+    ? new Date(session.last_activity_at).getTime()
+    : null;
+  if (lastActivityMs !== null && Date.now() - lastActivityMs > SESSION_IDLE_MS) {
+    await UserSession.revoke(session.id, "idle");
+    response.status(401).json({
+      error: "session_expired",
+      needs_totp: true,
+    });
+    return;
+  }
+  await UserSession.touch(session.id);
   next();
 }
 

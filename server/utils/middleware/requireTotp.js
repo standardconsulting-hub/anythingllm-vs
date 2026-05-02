@@ -23,6 +23,7 @@
 const prisma = require("../prisma");
 const { UserSession } = require("../../models/userSession");
 const { verifySessionToken } = require("../auth/mfaTokens");
+const { SESSION_IDLE_MS } = require("./idleTimeout");
 
 function bearerToken(req) {
   const auth = req.header?.("Authorization") ?? req.headers?.authorization;
@@ -64,6 +65,20 @@ async function requireFullAuth(req, res, next) {
   ) {
     return res.status(403).json({ error: "must_rotate_password" });
   }
+
+  // vs-fork: 15-minute per-session idle timeout (Plan 1.5 v1.2.1
+  // Task 5). Same enforcement as validatedRequest so MFA-aware
+  // routes (the requireFullAuth chain) are equally protected.
+  const lastActivityMs = session.last_activity_at
+    ? new Date(session.last_activity_at).getTime()
+    : null;
+  if (lastActivityMs !== null && Date.now() - lastActivityMs > SESSION_IDLE_MS) {
+    await UserSession.revoke(session.id, "idle");
+    return res
+      .status(401)
+      .json({ error: "session_expired", needs_totp: true });
+  }
+  await UserSession.touch(session.id);
 
   res.locals.user = user;
   res.locals.session = session;
