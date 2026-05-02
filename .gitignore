@@ -10,3 +10,6 @@ aws_cf_deploy_anything_llm.json
 yarn.lock
 *.bak
 .idea
+
+# vs-fork: test-side-effect cache (Plan 1.5 v1.2.1)
+server/__tests__/**/models/
