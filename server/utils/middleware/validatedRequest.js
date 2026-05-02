@@ -2,7 +2,20 @@ const { SystemSettings } = require("../../models/systemSettings");
 const { User } = require("../../models/user");
 const { EncryptionManager } = require("../EncryptionManager");
 const { decodeJWT } = require("../http");
+// vs-fork: Plan 1.5 v1.2.1 Task 4 — validate session JWTs against
+// the user_sessions row + reject challenge tokens reaching
+// protected routes.
+const { verifySessionToken } = require("../auth/mfaTokens");
+const { UserSession } = require("../../models/userSession");
 const EncryptionMgr = new EncryptionManager();
+
+// Endpoints that a user with must_rotate_password=true can still
+// reach. Add to this list when introducing new password-rotation
+// surfaces. (Plan 1.5 v1.2.1 Task 4.)
+const ROTATE_PASSWORD_ALLOWED_PATHS = new Set([
+  "/api/system/update-password",
+  "/api/system/user",
+]);
 
 async function validatedRequest(request, response, next) {
   const multiUserMode = await SystemSettings.isMultiUserMode();
@@ -79,15 +92,39 @@ async function validateMultiUserRequest(request, response, next) {
     return;
   }
 
-  const valid = decodeJWT(token);
-  if (!valid || !valid.id) {
+  // vs-fork: Plan 1.5 v1.2.1 Task 4. The token must be a Plan 1.5
+  // session JWT (aud="vs-declaration", jti=user_sessions.id).
+  // Challenge / enrolment tokens carry a different aud and are
+  // rejected before they can reach any protected route.
+  const decoded = verifySessionToken(token);
+  if (!decoded.ok) {
+    // Fall back to the legacy upstream JWT shape only as a hint
+    // to log clients out gracefully. Reject in both cases.
+    const legacy = decodeJWT(token);
+    if (legacy && legacy.id) {
+      response.status(401).json({
+        error: "Legacy auth token rejected. Re-login to obtain an MFA-bound session.",
+        needs_totp: true,
+      });
+      return;
+    }
     response.status(401).json({
       error: "Invalid auth token.",
+      reason: decoded.reason,
     });
     return;
   }
 
-  const user = await User.get({ id: valid.id });
+  const session = await UserSession.findActive(decoded.session_id);
+  if (!session || session.user_id !== decoded.user_id) {
+    response.status(401).json({
+      error: "session_expired",
+      needs_totp: true,
+    });
+    return;
+  }
+
+  const user = await User.get({ id: decoded.user_id });
   if (!user) {
     response.status(401).json({
       error: "Invalid auth for user.",
@@ -102,7 +139,33 @@ async function validateMultiUserRequest(request, response, next) {
     return;
   }
 
+  // MFA enrolment must be complete before reaching any protected
+  // route. Plan 1.5 Task 4.
+  if (!user.totp_verified_at) {
+    response.status(403).json({
+      error: "needs_enrolment",
+      needs_enrolment: true,
+    });
+    return;
+  }
+
+  // must_rotate_password gates everything except the rotate
+  // endpoints themselves. Plan 1.5 Task 4 (FLAG closure for the
+  // recovery-script-forces-rotation requirement).
+  if (
+    user.must_rotate_password === true &&
+    !ROTATE_PASSWORD_ALLOWED_PATHS.has(
+      request.originalUrl?.split("?")[0] || request.path
+    )
+  ) {
+    response.status(403).json({
+      error: "must_rotate_password",
+    });
+    return;
+  }
+
   response.locals.user = user;
+  response.locals.session = session;
   next();
 }
 

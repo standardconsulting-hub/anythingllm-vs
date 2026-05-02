@@ -31,6 +31,14 @@ const {
 } = require("../utils/files/logo");
 const { Telemetry } = require("../models/telemetry");
 const { ApiKey } = require("../models/apiKeys");
+// vs-fork: Plan 1.5 v1.2.1 Task 4 — login flow now issues a
+// challenge token instead of a full session JWT; the full JWT is
+// only minted by /api/auth/mfa/challenge after TOTP success.
+const {
+  issueChallengeToken,
+  CHALLENGE_AUD,
+  ENROLMENT_AUD,
+} = require("../utils/auth/mfaTokens");
 const { getCustomModels } = require("../utils/helpers/customModels");
 const { WorkspaceChats } = require("../models/workspaceChats");
 const {
@@ -268,30 +276,42 @@ function systemEndpoints(app) {
           existingUser?.id
         );
 
-        // Generate a session token for the user then check if they have seen the recovery codes
-        // and if not, generate recovery codes and return them to the frontend.
-        const sessionToken = makeJWT(
-          { id: existingUser.id, username: existingUser.username },
-          process.env.JWT_EXPIRY
-        );
+        // vs-fork: Plan 1.5 v1.2.1 Task 4. Password match is no
+        // longer enough to mint a session JWT — we hand back a
+        // single-use challenge token that the frontend then sends
+        // to /api/auth/mfa/challenge (or /api/auth/mfa/enrol if
+        // the user hasn't enrolled yet) along with a TOTP code.
+        // The full JWT is minted only on TOTP success.
+        const needsEnrolment = !existingUser.totp_verified_at;
+        const aud = needsEnrolment ? ENROLMENT_AUD : CHALLENGE_AUD;
+        const { token: challengeToken, expires_at: challengeExpires } =
+          await issueChallengeToken({
+            userId: existingUser.id,
+            aud,
+            remoteIp: request.ip || null,
+            userAgent: request.headers?.["user-agent"] || null,
+          });
+
+        const baseResponse = {
+          valid: true,
+          user: User.filterFields(existingUser),
+          message: null,
+          challenge_token: challengeToken,
+          challenge_expires_at: challengeExpires.toISOString(),
+        };
+        if (needsEnrolment) baseResponse.needs_enrolment = true;
+        else baseResponse.needs_totp = true;
+
         if (!existingUser.seen_recovery_codes) {
           const plainTextCodes = await generateRecoveryCodes(existingUser.id);
           response.status(200).json({
-            valid: true,
-            user: User.filterFields(existingUser),
-            token: sessionToken,
-            message: null,
+            ...baseResponse,
             recoveryCodes: plainTextCodes,
           });
           return;
         }
 
-        response.status(200).json({
-          valid: true,
-          user: User.filterFields(existingUser),
-          token: sessionToken,
-          message: null,
-        });
+        response.status(200).json(baseResponse);
         return;
       } else {
         const { password } = reqBody(request);
