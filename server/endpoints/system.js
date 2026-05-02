@@ -651,7 +651,26 @@ function systemEndpoints(app) {
           multiUserMode: true,
         });
         await EventLogs.logEvent("multi_user_mode_enabled", {}, user?.id);
-        response.status(200).json({ success: !!user, error });
+
+        // vs-fork: Plan 1.5 v1.2.1 Task 6. The COFA account that
+        // just got created has no totp_verified_at yet, so they
+        // can't reach any protected route until enrolment
+        // completes. Hand them an mfa-enrolment challenge token
+        // here so the frontend can route straight to the enrolment
+        // page without a /request-token round-trip.
+        const enrolmentChallenge = await issueChallengeToken({
+          userId: user.id,
+          aud: ENROLMENT_AUD,
+          remoteIp: request.ip || null,
+          userAgent: request.headers?.["user-agent"] || null,
+        });
+        response.status(200).json({
+          success: !!user,
+          error,
+          needs_enrolment: true,
+          challenge_token: enrolmentChallenge.token,
+          challenge_expires_at: enrolmentChallenge.expires_at.toISOString(),
+        });
       } catch (e) {
         await User.delete({});
         await SystemSettings._updateSettings({
