@@ -109,6 +109,59 @@ const System = {
         return { valid: false, message: e.message };
       });
   },
+  // vs-fork Plan 1.5 frontend Task 7. The challenge_token from
+  // /request-token is single-use; each call here may return a
+  // refreshed challenge_token in its response.
+  mfa: {
+    enrol: async function (challengeToken) {
+      return await fetch(`${API_BASE}/auth/mfa/enrol`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge_token: challengeToken }),
+      }).then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) return { error: body.error || "enrol_failed" };
+        return body;
+      });
+    },
+    enrolConfirm: async function (challengeToken, code) {
+      return await fetch(`${API_BASE}/auth/mfa/enrol/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge_token: challengeToken, code }),
+      }).then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) return { error: body.error || "confirm_failed", reason: body.reason };
+        return body;
+      });
+    },
+    challenge: async function (challengeToken, code, useBackupCode = false) {
+      return await fetch(`${API_BASE}/auth/mfa/challenge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challenge_token: challengeToken,
+          code,
+          use_backup_code: useBackupCode,
+        }),
+      }).then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) return { error: body.error || "challenge_failed", status: res.status, reason: body.reason };
+        return body;
+      });
+    },
+    stepUp: async function (code) {
+      return await fetch(`${API_BASE}/auth/mfa/step-up`, {
+        method: "POST",
+        headers: baseHeaders(),
+        body: JSON.stringify({ code }),
+      }).then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) return { error: body.error || "step_up_failed", status: res.status, reason: body.reason };
+        return body;
+      });
+    },
+  },
   /**
    * Refreshes the user object from the session.
    * @returns {Promise<{success: boolean, user: Object | null, message: string | null}>}

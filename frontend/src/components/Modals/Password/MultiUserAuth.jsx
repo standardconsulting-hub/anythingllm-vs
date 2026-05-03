@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from "react";
 import System from "../../../models/system";
-import { AUTH_TOKEN, AUTH_USER } from "../../../utils/constants";
+import {
+  AUTH_TOKEN,
+  AUTH_USER,
+  MFA_CHALLENGE_TOKEN,
+  MFA_USER_HINT,
+} from "../../../utils/constants";
 import paths from "../../../utils/paths";
 import showToast from "@/utils/toast";
 import ModalWrapper from "@/components/ModalWrapper";
@@ -195,8 +200,34 @@ export default function MultiUserAuth() {
     const data = {};
     const form = new FormData(e.target);
     for (var [key, value] of form.entries()) data[key] = value;
-    const { valid, user, token, message, recoveryCodes } =
-      await System.requestToken(data);
+    const response = await System.requestToken(data);
+    const {
+      valid,
+      user,
+      token,
+      message,
+      recoveryCodes,
+      // vs-fork Plan 1.5 frontend Task 7.
+      needs_totp,
+      needs_enrolment,
+      challenge_token,
+    } = response;
+
+    // vs-fork Plan 1.5: password OK but MFA challenge or enrolment
+    // is required. Stash the single-use challenge_token in
+    // sessionStorage and redirect to the appropriate screen. The
+    // user object is also kept as a hint so the next page can
+    // greet the operator without an extra round-trip.
+    if (valid && challenge_token && (needs_totp || needs_enrolment)) {
+      window.sessionStorage.setItem(MFA_CHALLENGE_TOKEN, challenge_token);
+      if (user)
+        window.sessionStorage.setItem(MFA_USER_HINT, JSON.stringify(user));
+      window.location = needs_enrolment
+        ? paths.loginMfaEnrol()
+        : paths.loginMfaChallenge();
+      return;
+    }
+
     if (valid && !!token && !!user) {
       setUser(user);
       setToken(token);

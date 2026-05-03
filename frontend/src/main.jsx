@@ -30,6 +30,37 @@ const router = createBrowserRouter([
         path: "/login",
         element: <Login />,
       },
+      // vs-fork Plan 1.5 frontend Task 7. Three new routes for the
+      // password → MFA challenge → session-JWT handshake. None of
+      // them need PrivateRoute — operator is mid-handshake, no
+      // session JWT exists yet. State is held in sessionStorage
+      // (cleared on tab close, matches the 5-min server-side
+      // challenge-token TTL).
+      {
+        path: "/login/mfa-challenge",
+        lazy: async () => {
+          const { default: MfaChallenge } = await import(
+            "@/pages/Login/MfaChallenge"
+          );
+          return { element: <MfaChallenge /> };
+        },
+      },
+      {
+        path: "/login/mfa-enrol",
+        lazy: async () => {
+          const { default: MfaEnrol } = await import("@/pages/MfaEnrol");
+          return { element: <MfaEnrol /> };
+        },
+      },
+      {
+        path: "/login/mfa-backup-codes",
+        lazy: async () => {
+          const { default: BackupCodesConfirm } = await import(
+            "@/pages/MfaEnrol/BackupCodesConfirm"
+          );
+          return { element: <BackupCodesConfirm /> };
+        },
+      },
       {
         path: "/sso/simple",
         element: <SimpleSSOPassthrough />,

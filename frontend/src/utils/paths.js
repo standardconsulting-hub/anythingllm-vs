@@ -18,6 +18,10 @@ export default {
   login: (noTry = false) => {
     return `/login${noTry ? "?nt=1" : ""}`;
   },
+  // vs-fork Plan 1.5 frontend Task 7.
+  loginMfaChallenge: () => "/login/mfa-challenge",
+  loginMfaEnrol: () => "/login/mfa-enrol",
+  loginMfaBackupCodes: () => "/login/mfa-backup-codes",
   sso: {
     login: () => {
       return "/sso/simple";

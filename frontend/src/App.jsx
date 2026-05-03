@@ -15,6 +15,10 @@ import KeyboardShortcutsHelp from "@/components/KeyboardShortcutsHelp";
 import ImageLightbox from "@/components/ImageLightbox";
 import { ErrorBoundary } from "react-error-boundary";
 import ErrorBoundaryFallback from "./components/ErrorBoundaryFallback";
+// vs-fork Plan 1.5 frontend Tasks 8 + 8.5: idle-timeout watcher
+// and step-up modal share a single window.fetch wrapper installed
+// once at app boot.
+import MfaInterceptor from "@/components/MfaInterceptor";
 
 export default function App() {
   const location = useLocation();
@@ -31,6 +35,7 @@ export default function App() {
               <LogoProvider>
                 <PfpProvider>
                   <I18nextProvider i18n={i18n}>
+                    <MfaInterceptor />
                     <Outlet />
                     <ToastContainer />
                     <KeyboardShortcutsHelp />

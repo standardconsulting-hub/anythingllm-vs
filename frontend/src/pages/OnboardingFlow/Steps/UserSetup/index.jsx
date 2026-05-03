@@ -4,7 +4,13 @@ import React, { useState, useEffect, useRef } from "react";
 import debounce from "lodash.debounce";
 import paths from "@/utils/paths";
 import { useNavigate } from "react-router-dom";
-import { AUTH_TIMESTAMP, AUTH_TOKEN, AUTH_USER } from "@/utils/constants";
+import {
+  AUTH_TIMESTAMP,
+  AUTH_TOKEN,
+  AUTH_USER,
+  MFA_CHALLENGE_TOKEN,
+  MFA_USER_HINT,
+} from "@/utils/constants";
 import { useTranslation } from "react-i18next";
 import { USERNAME_MIN_LENGTH, USERNAME_MAX_LENGTH } from "@/utils/username";
 import { PW_REGEX } from "@/pages/GeneralSettings/Security";
@@ -257,19 +263,39 @@ const MyTeam = ({ setMultiUserLoginValid, myTeamSubmitRef, navigate }) => {
       username: formData.get("username"),
       password: formData.get("password"),
     };
-    const { success, error } = await System.setupMultiUser(data);
-    if (!success) {
-      showToast(`Error: ${error}`, "error");
+    // vs-fork Plan 1.5 frontend Task 7. /system/enable-multi-user
+    // now responds with `needs_enrolment: true` + a challenge_token
+    // for the freshly-created COFA user. Stash and redirect to
+    // /login/mfa-enrol — the operator finishes enrolment there
+    // before any session JWT is minted. The pre-Plan-1.5 path
+    // (which auto-issued a JWT here and skipped MFA) is gone.
+    const setupRes = await System.setupMultiUser(data);
+    if (!setupRes?.success) {
+      showToast(`Error: ${setupRes?.error || "setup_failed"}`, "error");
       return;
     }
 
-    navigate(paths.onboarding.dataHandling());
-    // Auto-request token with credentials that was just set so they
-    // are not redirected to login after completion.
-    const { user, token } = await System.requestToken(data);
-    window.localStorage.setItem(AUTH_USER, JSON.stringify(user));
-    window.localStorage.setItem(AUTH_TOKEN, token);
-    window.localStorage.removeItem(AUTH_TIMESTAMP);
+    if (setupRes.needs_enrolment && setupRes.challenge_token) {
+      window.sessionStorage.setItem(
+        MFA_CHALLENGE_TOKEN,
+        setupRes.challenge_token
+      );
+      window.sessionStorage.setItem(
+        MFA_USER_HINT,
+        JSON.stringify({ username: data.username })
+      );
+      window.localStorage.removeItem(AUTH_TIMESTAMP);
+      window.location = paths.loginMfaEnrol();
+      return;
+    }
+
+    // Defensive fallback (should not be reachable in vs-fork —
+    // every successful first-run setup returns needs_enrolment).
+    showToast(
+      "Setup completed but the server did not return an enrolment challenge. Log in manually.",
+      "warning"
+    );
+    navigate(paths.login());
   };
 
   const setNewUsername = (e) => setUsername(e.target.value);

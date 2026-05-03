@@ -4,6 +4,12 @@ export const ONBOARDING_SURVEY_URL = "https://onboarding.anythingllm.com";
 export const AUTH_USER = "anythingllm_user";
 export const AUTH_TOKEN = "anythingllm_authToken";
 export const AUTH_TIMESTAMP = "anythingllm_authTimestamp";
+// vs-fork Plan 1.5 frontend Tasks 7/8/8.5: short-lived state held
+// across the password → MFA → session JWT handshake. sessionStorage
+// scopes them to the current tab and clears on close, which lines
+// up with the 5-minute server-side challenge-token TTL.
+export const MFA_CHALLENGE_TOKEN = "anythingllm_mfaChallengeToken";
+export const MFA_USER_HINT = "anythingllm_mfaUserHint";
 export const COMPLETE_QUESTIONNAIRE = "anythingllm_completed_questionnaire";
 export const SEEN_DOC_PIN_ALERT = "anythingllm_pinned_document_alert";
 export const SEEN_WATCH_ALERT = "anythingllm_watched_document_alert";
