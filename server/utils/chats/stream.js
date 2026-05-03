@@ -1,5 +1,4 @@
 const { v4: uuidv4 } = require("uuid");
-const prisma = require("../prisma");
 const { DocumentManager } = require("../DocumentManager");
 const { WorkspaceChats } = require("../../models/workspaceChats");
 const { WorkspaceParsedFiles } = require("../../models/workspaceParsedFiles");
@@ -316,6 +315,7 @@ async function streamChatWithWorkspace(
       },
       workflow: chatMode === "query" ? "targeted_query" : "open_chat",
       persistFn: async (auditId) => {
+        // BLOCK 1 + BLOCK 3 fix: see apiChatHandler.chatSync.
         const result = await WorkspaceChats.new({
           workspaceId: workspace.id,
           prompt: message,
@@ -328,12 +328,12 @@ async function streamChatWithWorkspace(
           },
           threadId: thread?.id || null,
           user,
+          auditId,
         });
-        if (result?.chat?.id) {
-          await prisma.workspace_chats.update({
-            where: { id: result.chat.id },
-            data: { audit_id: auditId },
-          });
+        if (!result?.chat || result.message) {
+          throw new Error(
+            `WorkspaceChats.new failed: ${result?.message || "no chat returned"}`
+          );
         }
         chat = result.chat;
       },

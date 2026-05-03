@@ -16,6 +16,7 @@ const {
   FailClosedActive,
   failClosedFlagPath,
   newAuditId,
+  _resetWritersForTests,
 } = require("../audit-middleware");
 
 describe("audit middleware — auditAndPersist", () => {
@@ -23,6 +24,9 @@ describe("audit middleware — auditAndPersist", () => {
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "vs-mw-test-"));
+    // BLOCK 4 fix: writers are now cached per auditDir. Each test
+    // mints a fresh tmp dir, so we reset the cache to avoid bleed.
+    _resetWritersForTests();
   });
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -179,6 +183,122 @@ describe("audit middleware — auditAndPersist", () => {
       .readdirSync(tmpDir)
       .filter((f) => f.startsWith("queries-"));
     expect(files).toEqual([]);
+  });
+
+  // Plan 1 v5.1 BLOCK 4 fix — singleton writer per auditDir.
+  // Concurrent calls share the same in-process serialisation queue
+  // so two interleaved auditAndPersist invocations cannot race.
+  it("BLOCK 4: concurrent auditAndPersist calls share one serialisation queue per auditDir", async () => {
+    const persistFn = async () => {};
+    const calls = Array.from({ length: 12 }).map((_, i) =>
+      auditAndPersist({
+        auditDir: tmpDir,
+        request: { ...baseRequest, body: { message: `m${i}` } },
+        llmResponse: `r${i}`,
+        retrievedChunks: [],
+        modelMeta,
+        workflow: "open_chat",
+        persistFn,
+      })
+    );
+    const entries = await Promise.all(calls);
+
+    // Every audit_id is unique.
+    const ids = entries.map((e) => e.audit_id);
+    expect(new Set(ids).size).toBe(12);
+
+    // The JSONL file has exactly 12 well-formed lines (no
+    // interleaved JSON, no orphan bytes). If the per-request
+    // writer regression returned, parallel writes against the
+    // same fd could split mid-line.
+    const today = new Date();
+    const yyyy = today.getUTCFullYear();
+    const mm = String(today.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(today.getUTCDate()).padStart(2, "0");
+    const file = path.join(tmpDir, `queries-${yyyy}-${mm}-${dd}.jsonl`);
+    const lines = fs
+      .readFileSync(file, "utf8")
+      .split("\n")
+      .filter((l) => l.length);
+    expect(lines).toHaveLength(12);
+    for (const line of lines) {
+      expect(() => JSON.parse(line)).not.toThrow();
+    }
+  });
+
+  // Plan 1 v5.1 BLOCK 1 fix — persistFn rejection path. Callers
+  // are expected to inspect WorkspaceChats.new()'s `{chat, message}`
+  // shape and throw on failure; we verify auditAndPersist's
+  // contract under that shape.
+  it("BLOCK 1: persistFn that throws still triggers fail-closed flag", async () => {
+    const persistFn = async () => {
+      // Mirror the real persistFn shape: caller throws when
+      // WorkspaceChats.new returns { chat: null, message: ... }.
+      throw new Error("WorkspaceChats.new failed: UNIQUE constraint x");
+    };
+
+    await expect(
+      auditAndPersist({
+        auditDir: tmpDir,
+        request: baseRequest,
+        llmResponse: "hello",
+        retrievedChunks: [],
+        modelMeta,
+        workflow: "open_chat",
+        persistFn,
+      })
+    ).rejects.toThrow(PersistFailure);
+
+    expect(fs.existsSync(failClosedFlagPath(tmpDir))).toBe(true);
+  });
+
+  // Plan 1 v5.1 BLOCK 5 fix — if writeFailClosedFlag itself fails,
+  // we cannot prove the next request will refuse, so the audit
+  // subsystem's state is undefined. The only safe response is hard
+  // exit. Test mocks process.exit via the underscore hook.
+  it("BLOCK 5: if fail-closed flag cannot be written, process aborts", async () => {
+    // Make the auditDir read-only AFTER the JSONL has been written.
+    // The tricky bit: writer needs to succeed, then writeFailClosedFlag
+    // needs to fail. We do this by chmod 0500 the dir before persistFn
+    // runs (the JSONL fd is already open). Actually simpler: we let
+    // the writer succeed normally, then point writeFailClosedFlag at
+    // an unwritable subdir by setting auditDir to that subdir AFTER
+    // the writer is cached.
+    //
+    // Cleanest: mock process.exit and arrange persistFn to throw,
+    // then make the flag dir unwritable just before flag-write.
+    const exited = [];
+    auditAndPersist._onUnflushableFailClose = (code) => exited.push(code);
+
+    // Write the JSONL successfully, then chmod the dir to 0500 so
+    // the subsequent flag write fails.
+    const persistFn = async () => {
+      fs.chmodSync(tmpDir, 0o500);
+      throw new Error("sqlite full");
+    };
+
+    try {
+      await expect(
+        auditAndPersist({
+          auditDir: tmpDir,
+          request: baseRequest,
+          llmResponse: "hello",
+          retrievedChunks: [],
+          modelMeta,
+          workflow: "open_chat",
+          persistFn,
+        })
+      ).rejects.toThrow(PersistFailure);
+      expect(exited).toEqual([1]);
+    } finally {
+      // Restore so afterEach's rmSync can clean up.
+      try {
+        fs.chmodSync(tmpDir, 0o700);
+      } catch {
+        /* ignore */
+      }
+      delete auditAndPersist._onUnflushableFailClose;
+    }
   });
 
   it("newAuditId has a non-regressing ms-prefix and is unique per call", async () => {

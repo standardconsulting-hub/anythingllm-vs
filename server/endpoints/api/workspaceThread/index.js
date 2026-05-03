@@ -14,6 +14,20 @@ const { WorkspaceChats } = require("../../../models/workspaceChats");
 const { User } = require("../../../models/user");
 const { ApiChatHandler } = require("../../../utils/chats/apiChatHandler");
 const { getModelTag } = require("../../utils");
+// vs-fork Plan 1 v5.1 BLOCK 2 fix: audit-subsystem errors thrown
+// from chatSync must map to 503 here, not a generic 500.
+const {
+  AuditFailure,
+  PersistFailure,
+  FailClosedActive,
+} = require("../../../utils/audit/audit-middleware");
+// vs-fork Plan 1 Task 10: stream surfaces use BufferingResponse so
+// no SSE chunk reaches the wire before the audit JSONL row is
+// fsynced. Imported here too because the thread stream route below
+// follows the same pattern as /v1/workspace/:slug/stream-chat.
+const {
+  BufferingResponse,
+} = require("../../../utils/audit/bufferingResponse");
 
 function apiWorkspaceThreadEndpoints(app) {
   if (!app) return;
@@ -451,6 +465,19 @@ function apiWorkspaceThreadEndpoints(app) {
         });
         response.status(200).json({ ...result });
       } catch (e) {
+        // vs-fork Plan 1 v5.1 BLOCK 2 fix: 503 for audit errors.
+        if (
+          e instanceof FailClosedActive ||
+          e instanceof AuditFailure ||
+          e instanceof PersistFailure
+        ) {
+          response.status(e.status || 503).json({
+            error: e.message,
+            audit_state:
+              e instanceof FailClosedActive ? "fail_closed" : e.name,
+          });
+          return;
+        }
         console.error(e.message, e);
         response.status(500).json({
           id: uuidv4(),
@@ -600,22 +627,45 @@ function apiWorkspaceThreadEndpoints(app) {
 
         const user = userId ? await User.get({ id: Number(userId) }) : null;
 
-        response.setHeader("Cache-Control", "no-cache");
-        response.setHeader("Content-Type", "text/event-stream");
-        response.setHeader("Access-Control-Allow-Origin", "*");
-        response.setHeader("Connection", "keep-alive");
-        response.flushHeaders();
+        // vs-fork Plan 1 v5.1: refactor to BufferingResponse to
+        // match the other three streaming surfaces. Tokens stay in
+        // memory until auditAndPersist fsyncs the JSONL row.
+        const bufRes = new BufferingResponse();
+        bufRes.setHeader("Cache-Control", "no-cache");
+        bufRes.setHeader("Content-Type", "text/event-stream");
+        bufRes.setHeader("Access-Control-Allow-Origin", "*");
+        bufRes.setHeader("Connection", "keep-alive");
+        bufRes.flushHeaders();
 
-        await ApiChatHandler.streamChat({
-          response,
-          workspace,
-          message,
-          mode: resolvedMode,
-          user,
-          thread,
-          attachments,
-          reset,
-        });
+        try {
+          await ApiChatHandler.streamChat({
+            response: bufRes,
+            workspace,
+            message,
+            mode: resolvedMode,
+            user,
+            thread,
+            attachments,
+            reset,
+          });
+        } catch (auditErr) {
+          if (
+            auditErr instanceof AuditFailure ||
+            auditErr instanceof PersistFailure ||
+            auditErr instanceof FailClosedActive
+          ) {
+            response.status(auditErr.status || 503).json({
+              error: auditErr.message,
+              audit_state:
+                auditErr instanceof FailClosedActive
+                  ? "fail_closed"
+                  : auditErr.name,
+            });
+            return;
+          }
+          throw auditErr;
+        }
+
         await Telemetry.sendTelemetry("sent_chat", {
           LLMSelection: process.env.LLM_PROVIDER || "openai",
           Embedder: process.env.EMBEDDING_ENGINE || "inherit",
@@ -629,9 +679,17 @@ function apiWorkspaceThreadEndpoints(app) {
           threadName: thread?.name,
           userId: user?.id,
         });
-        response.end();
+        bufRes.flushTo(response);
       } catch (e) {
         console.error(e.message, e);
+        if (!response.headersSent) {
+          response.status(500).json({
+            id: uuidv4(),
+            type: "abort",
+            error: e.message,
+          });
+          return;
+        }
         writeResponseChunk(response, {
           id: uuidv4(),
           type: "abort",

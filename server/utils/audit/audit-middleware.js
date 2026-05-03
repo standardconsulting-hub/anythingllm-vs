@@ -28,6 +28,27 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { makeAuditWriter } = require("./audit-writer");
 
+// Plan 1 v5.1 final-review BLOCK 4: the in-process serialisation
+// queue lives on the writer instance. Earlier code created a fresh
+// writer on every auditAndPersist call, so concurrent requests
+// each had their own chain of length 1 and the JSONL line-integrity
+// guarantee was paper-thin. Keep one writer per auditDir for the
+// life of the process.
+const _writers = new Map();
+function getWriter(auditDir) {
+  let w = _writers.get(auditDir);
+  if (!w) {
+    w = makeAuditWriter({ auditDir });
+    _writers.set(auditDir, w);
+  }
+  return w;
+}
+// Test-only escape hatch so suites that mkdtemp a fresh tmp dir
+// per case don't leak chained promises across cases.
+function _resetWritersForTests() {
+  _writers.clear();
+}
+
 class AuditFailure extends Error {
   constructor(message, cause) {
     super(message);
@@ -183,7 +204,8 @@ async function auditAndPersist({
   };
 
   // Step 3: audit write. fsync inside the writer.
-  const writer = makeAuditWriter({ auditDir });
+  // BLOCK 4 fix: cached singleton writer per auditDir.
+  const writer = getWriter(auditDir);
   try {
     await writer.write(entry);
   } catch (err) {
@@ -200,19 +222,30 @@ async function auditAndPersist({
     try {
       await persistFn(auditId);
     } catch (err) {
+      // BLOCK 5 fix: if we cannot prove the flag was written, we
+      // cannot prove subsequent requests will refuse, so the audit
+      // subsystem's state is undefined. The only safe response is
+      // to crash the process — operator sees the box down, knows
+      // to investigate. Logging-and-continuing was the previous
+      // behaviour and is what Codex flagged.
       try {
         await writeFailClosedFlag(
           auditDir,
           `Persistence failed for audit_id=${auditId}: ${err.message}`
         );
       } catch (flagErr) {
-        // If we cannot even write the flag, the operator must be
-        // alerted out of band. Surface the original cause too.
         // eslint-disable-next-line no-console
         console.error(
-          "CRITICAL: cannot write fail-closed flag",
-          flagErr,
-          "original cause:",
+          "CRITICAL: audit subsystem cannot write fail-closed flag; aborting process to refuse traffic.",
+          { flagErr: flagErr?.message, originalCause: err?.message, auditId }
+        );
+        // Test-overridable; default behaviour is hard exit.
+        (auditAndPersist._onUnflushableFailClose || process.exit)(1);
+        // If something replaced process.exit (test mocks), still
+        // surface a crash-class error so the caller sees it.
+        throw new PersistFailure(
+          `CRITICAL: persistence failed and fail-closed flag could not be written (audit_id=${auditId}). ` +
+            `flagErr=${flagErr?.message}; originalCause=${err?.message}.`,
           err
         );
       }
@@ -236,4 +269,5 @@ module.exports = {
   writeFailClosedFlag,
   newAuditId,
   failClosedFlagPath,
+  _resetWritersForTests,
 };

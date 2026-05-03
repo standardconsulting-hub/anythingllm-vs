@@ -1,4 +1,4 @@
-# vs-fork: audit pipeline (Plan 1 Tasks 7–11)
+# vs-fork: audit pipeline (Plan 1 Tasks 7–11, v5.1)
 
 This document is the operator-facing reference for the
 audit chain shipped by Plan 1 Tasks 7–11. It complements
@@ -6,6 +6,8 @@ audit chain shipped by Plan 1 Tasks 7–11. It complements
 
 > Plan ref: `docs/plans/2026-04-30-plan-1-foundation-and-audit.md`
 > §Tasks 7–11. Spec ref: VS Declaration v1.3 §6.1, §7.3.
+> v5.1 patch resolves five BLOCKs from the final-Codex review;
+> see §7 below.
 
 ---
 
@@ -167,6 +169,18 @@ These are scoped out of Plan 1 v5 and tracked as deferred:
   call a no-op; the egress allowlist in Plan 2 blocks
   `*.posthog.com` as defence-in-depth. Ripping the calls out
   is deferred to Plan 2 for the same reason.
+- **Abort propagation in `BufferingResponse`** is intentionally
+  a no-op. Upstream provider code attaches a listener via
+  `response.on("close", handleAbort)` to short-circuit the LLM
+  if the user disconnects mid-stream. Under the audit-pause
+  pattern the user has no live connection to disconnect from
+  (chunks are buffered) until after audit fsync, so honouring
+  abort would either (a) deliver a partial answer with no
+  audit row, violating the AUDIT-FIRST guarantee, or
+  (b) cancel the audit row mid-flight, leaving an undefined
+  state. Both worse than letting the LLM finish into the
+  buffer. Documented here so a future reader doesn't "fix" the
+  shim.
 
 ## 6. Test coverage
 
@@ -175,7 +189,7 @@ Audit tests in `server/utils/audit/__tests__/`:
 | Suite | Count | What it covers |
 |---|---|---|
 | `audit-writer.test.js` | 8 | line-shape + UTC day-stamp + 0600 perms + appends + date-boundary roll + UTC-not-local + fresh-fd fsync proof + concurrent serialisation |
-| `audit-middleware.test.js` | 5 | happy-path round-trip + audit failure no-persist + persist failure writes flag + pre-existing flag refuses + audit_id ms-prefix monotonicity |
+| `audit-middleware.test.js` | 8 | happy-path round-trip + audit failure no-persist + persist failure writes flag + pre-existing flag refuses + audit_id ms-prefix monotonicity + **v5.1 BLOCK 1: persistFn-throw drives flag write** + **v5.1 BLOCK 4: concurrent calls share one queue per auditDir** + **v5.1 BLOCK 5: hard-exit when flag write itself fails** |
 | `bufferingResponse.test.js` | 8 | chunk capture + ordered replay + headers replay + status replay + `.json` + write-after-end no-op + EventEmitter shape + skip-headers-on-committed-real |
 
 Runs with the rest of the server suite under `--runInBand`:
@@ -185,4 +199,36 @@ cd /Vault/anythingllm/src
 ./node_modules/.bin/jest server/ --runInBand
 ```
 
-Total at the time of this commit: 222 passed across 32 suites.
+Total at the time of this commit: 225 passed across 32 suites
+(plus one pre-existing cross-endpoint replay flake from Plan 1.5
+that surfaces under heavy parallelism — same as the prior commit).
+
+## 7. v5.1 patch — final-Codex BLOCK fixes
+
+The first end-to-end smoke proved the audit pipeline live, then
+Codex (gpt-5.5, high reasoning, read-only sandbox) reviewed the
+five-commit diff and surfaced five BLOCK-class issues. All five
+are now fixed; the FLAGs in §5 stand as documented deviations.
+
+| BLOCK | What broke the guarantee | Fix |
+|---|---|---|
+| 1 | `WorkspaceChats.new` swallows prisma errors and returns `{chat: null, message}`. The original `persistFn` ignored that shape, so `auditAndPersist` thought persistence succeeded and skipped writing the fail-closed flag — defeating the whole mechanism for the SQLite failure modes the plan promises to catch. | Each `persistFn` now `throw`s on `!result.chat \|\| result.message`. `auditAndPersist`'s catch then writes the flag and throws `PersistFailure`. |
+| 2 | Non-streaming `chatSync` converted `AuditFailure` / `PersistFailure` / `FailClosedActive` into a normal `{type: "abort"}` payload, and the route handlers in `api/workspace/index.js` and `api/workspaceThread/index.js` returned HTTP **200**. Spec §6.1 says "every subsequent chat returns 503 until recovery" — that was violated for the dev-API non-streaming surface. | `chatSync` re-throws audit errors. The two route handlers gain the same `if (e instanceof FailClosedActive\|AuditFailure\|PersistFailure)` shape used in the streaming routes — 503 with `audit_state` field. |
+| 3 | `audit_id` was a two-step `WorkspaceChats.new` then `prisma.workspace_chats.update`. A crash between the two left a row with `audit_id NULL` and **no fail-close flag** — breaking the round-trip guarantee under crash. | `WorkspaceChats.new` now accepts an optional `auditId` and bakes it into the single `create`. The post-create `update` call is removed at all three hook sites. |
+| 4 | `audit-writer`'s in-process serialisation queue lives on the writer instance, but `auditAndPersist` was creating a fresh writer on every request. Each concurrent request had its own chain of length 1, so the JSONL line-integrity guarantee was paper-thin. | Module-scoped writer cache in `audit-middleware.js` keyed on `auditDir`. New test (`BLOCK 4`) drives 12 parallel `auditAndPersist` calls and asserts 12 well-formed JSONL lines + 12 unique `audit_id`s. |
+| 5 | If `writeFailClosedFlag` itself failed (disk full, perms), the code logged and continued to throw a `PersistFailure` whose message claimed the flag had been written. Subsequent requests would not fail closed — silent regression of the most important guarantee. | If the flag write throws, the audit subsystem's state is undefined; the only safe response is to refuse all traffic. The middleware now logs the original cause + flag-write failure and calls `process.exit(1)`. Test mocks the exit hook via `auditAndPersist._onUnflushableFailClose`. |
+
+While auditing the diff for BLOCK 2, one additional gap surfaced
+that Codex did not explicitly call out: the dev-API thread
+streaming endpoint `/v1/workspace/:slug/thread/:threadSlug/stream-chat`
+in `endpoints/api/workspaceThread/index.js` was missed in the
+original Task 10 refactor — it wrote SSE chunks straight to the
+real Express response. Tokens reached the user before audit
+fsync. v5.1 refactors it to the same `BufferingResponse` pattern
+as the other three streaming surfaces.
+
+`@@index([audit_id])` was redundant with `@unique` (FLAG 9) and
+has been dropped from the schema. A follow-up migration
+`20260503120000_vs_audit_id_idx_dedupe` removes the dead index
+from existing databases. The unique index is the only one needed
+for `WHERE audit_id = ?` lookups.

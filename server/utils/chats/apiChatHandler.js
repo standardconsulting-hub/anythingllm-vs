@@ -1,5 +1,4 @@
 const { v4: uuidv4 } = require("uuid");
-const prisma = require("../prisma");
 const { DocumentManager } = require("../DocumentManager");
 const { WorkspaceChats } = require("../../models/workspaceChats");
 // vs-fork: Plan 1 Task 8/9 — every LLM-generated response goes
@@ -465,6 +464,8 @@ async function chatSync({
       },
       workflow: chatMode === "query" ? "targeted_query" : "open_chat",
       persistFn: async (auditId) => {
+        // BLOCK 3 fix: audit_id lands on the row atomically via
+        // WorkspaceChats.new — no second update.
         const result = await WorkspaceChats.new({
           workspaceId: workspace.id,
           prompt: message,
@@ -478,34 +479,30 @@ async function chatSync({
           threadId: thread?.id || null,
           apiSessionId: sessionId,
           user,
+          auditId,
         });
-        // Tag the SQLite row with the audit_id so history/export
-        // can filter by it. vs-fork Prisma migration 20260503093000
-        // adds the column.
-        if (result?.chat?.id) {
-          await prisma.workspace_chats.update({
-            where: { id: result.chat.id },
-            data: { audit_id: auditId },
-          });
+        // BLOCK 1 fix: WorkspaceChats.new swallows prisma errors
+        // and returns { chat: null, message }. If we don't throw
+        // here, auditAndPersist thinks persistence succeeded and
+        // skips writing the fail-closed flag.
+        if (!result?.chat || result.message) {
+          throw new Error(
+            `WorkspaceChats.new failed: ${result?.message || "no chat returned"}`
+          );
         }
         chat = result.chat;
       },
     });
   } catch (err) {
+    // BLOCK 2 fix: do NOT convert audit errors to a normal abort
+    // payload — that would let the route handler return 200. Let
+    // them propagate to the route handler, which maps them to 503.
     if (
       err instanceof FailClosedActive ||
       err instanceof AuditFailure ||
       err instanceof PersistFailure
     ) {
-      return {
-        id: uuid,
-        type: "abort",
-        textResponse: null,
-        sources: [],
-        close: true,
-        error: err.message,
-        metrics: performanceMetrics,
-      };
+      throw err;
     }
     throw err;
   }
@@ -905,6 +902,7 @@ async function streamChat({
         },
         workflow: chatMode === "query" ? "targeted_query" : "open_chat",
         persistFn: async (auditId) => {
+          // BLOCK 1 + BLOCK 3 fix: see chatSync above.
           const result = await WorkspaceChats.new({
             workspaceId: workspace.id,
             prompt: message,
@@ -918,12 +916,12 @@ async function streamChat({
             threadId: thread?.id || null,
             apiSessionId: sessionId,
             user,
+            auditId,
           });
-          if (result?.chat?.id) {
-            await prisma.workspace_chats.update({
-              where: { id: result.chat.id },
-              data: { audit_id: auditId },
-            });
+          if (!result?.chat || result.message) {
+            throw new Error(
+              `WorkspaceChats.new failed: ${result?.message || "no chat returned"}`
+            );
           }
           chat = result.chat;
         },

@@ -723,6 +723,21 @@ function apiWorkspaceEndpoints(app) {
         });
         return response.status(200).json({ ...result });
       } catch (e) {
+        // vs-fork Plan 1 v5.1 BLOCK 2 fix: audit-subsystem errors
+        // must surface as HTTP 503 with audit_state, not be folded
+        // into a generic 500 abort payload.
+        if (
+          e instanceof FailClosedActive ||
+          e instanceof AuditFailure ||
+          e instanceof PersistFailure
+        ) {
+          response.status(e.status || 503).json({
+            error: e.message,
+            audit_state:
+              e instanceof FailClosedActive ? "fail_closed" : e.name,
+          });
+          return;
+        }
         console.error(e.message, e);
         response.status(500).json({
           id: uuidv4(),

@@ -2,6 +2,11 @@ const prisma = require("../utils/prisma");
 const { safeJSONStringify } = require("../utils/helpers/chat/responses");
 
 const WorkspaceChats = {
+  // vs-fork Plan 1 v5.1 BLOCK 3 fix: accept an optional `auditId`
+  // so the audit_id lands on the row atomically with `create`. The
+  // previous shape did `create` then a separate `update` — under
+  // crash between the two, the row existed with `audit_id NULL`
+  // and no fail-close flag, breaking the round-trip guarantee.
   new: async function ({
     workspaceId,
     prompt,
@@ -10,6 +15,7 @@ const WorkspaceChats = {
     threadId = null,
     include = true,
     apiSessionId = null,
+    auditId = null,
   }) {
     try {
       const chat = await prisma.workspace_chats.create({
@@ -21,6 +27,7 @@ const WorkspaceChats = {
           thread_id: threadId,
           api_session_id: apiSessionId,
           include,
+          audit_id: auditId,
         },
       });
       return { chat, message: null };
