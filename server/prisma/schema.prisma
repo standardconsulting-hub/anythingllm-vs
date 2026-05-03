@@ -259,10 +259,19 @@ model workspace_chats {
   user_id        Int?
   thread_id      Int? // No relation to prevent whole table migration
   api_session_id String? // String identifier for only the dev API to partition chats in any mode.
+  // vs-fork: Plan 1 Task 8 — audit middleware writes the same
+  // opaque audit_id into the JSONL audit row and onto the
+  // SQLite turn so history/export endpoints can filter by id
+  // presence rather than timestamp matching. Nullable for
+  // upstream-compatibility on any pre-vs-fork rows; in
+  // production the middleware never persists with audit_id null.
+  audit_id       String?  @unique
   createdAt      DateTime @default(now())
   lastUpdatedAt  DateTime @default(now())
   feedbackScore  Boolean?
   users          users?   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([audit_id])
 }
 
 model workspace_agent_invocations {
