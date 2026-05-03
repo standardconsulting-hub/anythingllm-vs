@@ -26,6 +26,26 @@ const {
 const { validWorkspaceSlug } = require("../utils/middleware/validWorkspace");
 const { convertToChatHistory } = require("../utils/helpers/chat/responses");
 const { CollectorApi } = require("../utils/collectorApi");
+// vs-fork Plan 2 §E — document upload audit hook. Two JSONL
+// rows per upload sharing one audit_id (upload_attempt before
+// collector, upload_outcome after).
+const crypto = require("node:crypto");
+const fsp = require("node:fs/promises");
+const {
+  auditAndPersist,
+  AuditFailure,
+  PersistFailure,
+  FailClosedActive,
+  writeFailClosedFlag,
+} = require("../utils/audit/audit-middleware");
+
+async function sha256OfFile(filePath) {
+  // Stream-friendly sha256. AnythingLLM upload sizes are typically
+  // <50MB; readFile is acceptable. For larger files we'd switch
+  // to a streaming digest.
+  const buf = await fsp.readFile(filePath);
+  return crypto.createHash("sha256").update(buf).digest("hex");
+}
 const {
   determineWorkspacePfpFilepath,
   fetchPfp,
@@ -117,44 +137,137 @@ function workspaceEndpoints(app) {
       handleFileUpload,
     ],
     async function (request, response) {
+      // vs-fork Plan 2 §E: AUDIT FIRST, two-row pattern.
+      // multer has already written the upload to a temp path
+      // before this handler runs. Capture it now so we can clean
+      // up if the audit fails.
+      const tempPath = request.file?.path;
+      const { originalname } = request.file ?? {};
+
+      let auditId;
+      try {
+        // Compute sha256 of the uploaded bytes for the audit
+        // record. The file is on disk at tempPath; reading it
+        // again is cheap.
+        const sha256 = tempPath ? await sha256OfFile(tempPath) : null;
+
+        // Row 1: upload_attempt — written BEFORE the collector.
+        const row1 = await auditAndPersist({
+          kind: "upload_attempt",
+          request,
+          upload: {
+            filename: originalname,
+            sha256,
+            size_bytes: request.file?.size ?? null,
+            mime: request.file?.mimetype ?? null,
+            processor: "collector",
+          },
+        });
+        auditId = row1.audit_id;
+      } catch (auditErr) {
+        // v3 BLOCK fix from Plan 2 v7: multer wrote a temp file
+        // before this hook ran. If audit fails we MUST NOT leave
+        // the file behind — that would mean a document is on disk
+        // without a JSONL audit row, violating AUDIT-FIRST.
+        if (tempPath) {
+          await fsp.unlink(tempPath).catch((e) => {
+            console.error("upload audit-fail temp cleanup failed", tempPath, e);
+          });
+        }
+        if (
+          auditErr instanceof FailClosedActive ||
+          auditErr instanceof AuditFailure ||
+          auditErr instanceof PersistFailure
+        ) {
+          response.status(auditErr.status || 503).json({
+            success: false,
+            error: auditErr.message,
+            audit_state:
+              auditErr instanceof FailClosedActive
+                ? "fail_closed"
+                : auditErr.name,
+          });
+          return;
+        }
+        // Unknown error — propagate to outer catch.
+        throw auditErr;
+      }
+
+      // Run the collector. Capture timing + outcome for Row 2.
+      const collectorStart = Date.now();
+      let outerOk = false;
+      let outcome = "collector_failed";
+      let collectorMessage = null;
+      let collectorReturnedSuccess = false;
       try {
         const Collector = new CollectorApi();
-        const { originalname } = request.file;
         const processingOnline = await Collector.online();
-
         if (!processingOnline) {
-          response
-            .status(500)
-            .json({
-              success: false,
-              error: `Document processing API is not online. Document ${originalname} will not be processed automatically.`,
-            })
-            .end();
-          return;
+          collectorMessage = `Document processing API is not online. Document ${originalname} will not be processed automatically.`;
+        } else {
+          const { success, reason } =
+            await Collector.processDocument(originalname);
+          if (success) {
+            outcome = "success";
+            collectorReturnedSuccess = true;
+            outerOk = true;
+            Collector.log(
+              `Document ${originalname} uploaded processed and successfully. It is now available in documents.`
+            );
+          } else {
+            collectorMessage = reason || "collector returned success=false";
+          }
         }
+      } catch (collectorErr) {
+        outcome = "collector_failed";
+        collectorMessage = collectorErr.message;
+      }
+      const duration_ms = Date.now() - collectorStart;
 
-        const { success, reason } =
-          await Collector.processDocument(originalname);
-        if (!success) {
-          response.status(500).json({ success: false, error: reason }).end();
-          return;
-        }
+      // Row 2: upload_outcome — same audit_id as Row 1.
+      try {
+        await auditAndPersist({
+          kind: "upload_outcome",
+          auditId,
+          uploadOutcome: { outcome, duration_ms, collector_message: collectorMessage },
+        });
+      } catch (row2Err) {
+        // Row 2 audit failed. We cannot prove the outcome was
+        // recorded. Write the durable fail-closed flag so the next
+        // request refuses (same shape as chat persistFn failure).
+        await writeFailClosedFlag(
+          process.env.VS_AUDIT_DIR || "/Vault/audit",
+          `upload_outcome audit failed for audit_id=${auditId}: ${row2Err.message}`
+        ).catch((flagErr) => {
+          console.error(
+            "CRITICAL: upload Row 2 audit failed AND fail-closed flag write failed",
+            { auditId, row2Err: row2Err?.message, flagErr: flagErr?.message }
+          );
+        });
+        // Surface the failure to the operator.
+        response.status(500).json({
+          success: false,
+          error: `upload_outcome audit failed (audit_id=${auditId}); fail-closed flag attempted.`,
+        });
+        return;
+      }
 
-        Collector.log(
-          `Document ${originalname} uploaded processed and successfully. It is now available in documents.`
-        );
+      // Telemetry + event log + response, only if collector succeeded.
+      if (collectorReturnedSuccess) {
         await Telemetry.sendTelemetry("document_uploaded");
         await EventLogs.logEvent(
           "document_uploaded",
-          {
-            documentName: originalname,
-          },
+          { documentName: originalname, audit_id: auditId },
           response.locals?.user?.id
         );
-        response.status(200).json({ success: true, error: null });
-      } catch (e) {
-        console.error(e.message, e);
-        response.sendStatus(500).end();
+      }
+
+      // Response: 200 if collector succeeded, 500 if it failed.
+      // Both rows in JSONL regardless.
+      if (outerOk) {
+        response.status(200).json({ success: true, error: null, audit_id: auditId });
+      } else {
+        response.status(500).json({ success: false, error: collectorMessage, audit_id: auditId });
       }
     }
   );

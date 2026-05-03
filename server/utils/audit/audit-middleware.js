@@ -156,11 +156,23 @@ function extractPrompt(request) {
 
 async function auditAndPersist({
   auditDir = process.env.VS_AUDIT_DIR || "/Vault/audit",
+  // vs-fork Plan 2 §E: discriminator. "chat" (default, existing
+  // behaviour); "upload_attempt" (Row 1 of doc upload, before
+  // collector); "upload_outcome" (Row 2, after collector).
+  kind = "chat",
+  // For upload_outcome, the caller passes Row 1's audit_id so
+  // both rows share an id. For chat + upload_attempt, the
+  // middleware mints a fresh id.
+  auditId: providedAuditId = null,
   request,
+  // chat fields:
   llmResponse,
   retrievedChunks = [],
   modelMeta = {},
   workflow,
+  // upload fields:
+  upload,           // {filename, sha256, size_bytes, mime, processor}
+  uploadOutcome,    // {outcome, duration_ms, collector_message}
   persistFn,
 }) {
   // Step 0: durable fail-closed flag wins over everything. If
@@ -168,40 +180,75 @@ async function auditAndPersist({
   // the flag, refuse before doing any work.
   checkFailClosed(auditDir);
 
-  // Step 1: generate the audit_id BEFORE writing the JSONL so
-  // the persistFn can store the same value in SQLite. The
-  // history/export endpoints filter by audit_id presence, not by
-  // timestamp matching.
-  const auditId = newAuditId();
+  // Step 1: audit_id. Chat + upload_attempt mint fresh; upload_outcome
+  // reuses Row 1's id so JOIN works at analysis time.
+  const auditId = providedAuditId || newAuditId();
 
-  // Step 2: build the JSONL entry.
-  const entry = {
-    audit_id: auditId,
-    ts: new Date().toISOString(),
-    matter: request?.params?.slug || request?.body?.matter || null,
-    workspace_id: request?.params?.slug || null,
-    user:
-      request?.user?.email ||
-      request?.user?.username ||
-      request?.locals?.user?.email ||
-      request?.locals?.user?.username ||
-      "unknown",
-    model: modelMeta.model ?? null,
-    anythingllm_version: modelMeta.anythingllm_version ?? null,
-    system_prompt: modelMeta.system_prompt ?? null,
-    firm_reference_manifest: modelMeta.firm_reference_manifest ?? null,
-    embedding_model: modelMeta.embedding_model ?? null,
-    chunking: modelMeta.chunking ?? null,
-    retrieved_chunks: retrievedChunks,
-    prompt: extractPrompt(request),
-    response: llmResponse,
-    tokens_in: modelMeta.tokens_in ?? null,
-    tokens_out: modelMeta.tokens_out ?? null,
-    latency_ms: modelMeta.latency_ms ?? null,
-    cw_pass: false,
-    workflow: workflow ?? null,
-    citation_check: "not_applicable_v1",
-  };
+  // Step 2: build the JSONL entry. Shape depends on `kind`.
+  let entry;
+  if (kind === "chat") {
+    entry = {
+      audit_id: auditId,
+      ts: new Date().toISOString(),
+      matter: request?.params?.slug || request?.body?.matter || null,
+      workspace_id: request?.params?.slug || null,
+      user:
+        request?.user?.email ||
+        request?.user?.username ||
+        request?.locals?.user?.email ||
+        request?.locals?.user?.username ||
+        "unknown",
+      model: modelMeta.model ?? null,
+      anythingllm_version: modelMeta.anythingllm_version ?? null,
+      system_prompt: modelMeta.system_prompt ?? null,
+      firm_reference_manifest: modelMeta.firm_reference_manifest ?? null,
+      embedding_model: modelMeta.embedding_model ?? null,
+      chunking: modelMeta.chunking ?? null,
+      retrieved_chunks: retrievedChunks,
+      prompt: extractPrompt(request),
+      response: llmResponse,
+      tokens_in: modelMeta.tokens_in ?? null,
+      tokens_out: modelMeta.tokens_out ?? null,
+      latency_ms: modelMeta.latency_ms ?? null,
+      cw_pass: false,
+      workflow: workflow ?? null,
+      citation_check: "not_applicable_v1",
+    };
+  } else if (kind === "upload_attempt") {
+    if (!upload) throw new Error("upload_attempt requires `upload` payload");
+    entry = {
+      audit_id: auditId,
+      ts: new Date().toISOString(),
+      kind: "upload_attempt",
+      workspace_id: request?.params?.slug || null,
+      user:
+        request?.user?.email ||
+        request?.user?.username ||
+        request?.locals?.user?.email ||
+        request?.locals?.user?.username ||
+        "unknown",
+      filename: upload.filename,
+      sha256: upload.sha256,
+      size_bytes: upload.size_bytes,
+      mime: upload.mime,
+      processor: upload.processor || "collector",
+    };
+  } else if (kind === "upload_outcome") {
+    if (!providedAuditId)
+      throw new Error("upload_outcome requires `auditId` (shared with Row 1)");
+    if (!uploadOutcome)
+      throw new Error("upload_outcome requires `uploadOutcome` payload");
+    entry = {
+      audit_id: auditId,
+      ts: new Date().toISOString(),
+      kind: "upload_outcome",
+      outcome: uploadOutcome.outcome,
+      duration_ms: uploadOutcome.duration_ms ?? null,
+      collector_message: uploadOutcome.collector_message ?? null,
+    };
+  } else {
+    throw new Error(`auditAndPersist: unknown kind '${kind}'`);
+  }
 
   // Step 3: audit write. fsync inside the writer.
   // BLOCK 4 fix: cached singleton writer per auditDir.
@@ -218,7 +265,11 @@ async function auditAndPersist({
   // Step 4: persist. The audit row is already on disk and cannot
   // be un-audited. If persistence fails, we set the durable
   // fail-closed flag so the next call refuses.
-  if (persistFn) {
+  // vs-fork Plan 2 §E: upload kinds are JSONL-only — no SQLite
+  // shadow row needed. Silently skip persistFn for upload_*
+  // kinds so callers can't accidentally write to a chat table.
+  const isUploadKind = kind === "upload_attempt" || kind === "upload_outcome";
+  if (persistFn && !isUploadKind) {
     try {
       await persistFn(auditId);
     } catch (err) {

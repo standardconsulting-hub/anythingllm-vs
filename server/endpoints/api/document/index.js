@@ -15,6 +15,21 @@ const fs = require("fs");
 const path = require("path");
 const { Document } = require("../../../models/documents");
 const { purgeFolder } = require("../../../utils/files/purgeDocument");
+// vs-fork Plan 2 §E — document upload audit hook (dev API).
+const crypto = require("node:crypto");
+const fsp = require("node:fs/promises");
+const {
+  auditAndPersist,
+  AuditFailure,
+  PersistFailure,
+  FailClosedActive,
+  writeFailClosedFlag,
+} = require("../../../utils/audit/audit-middleware");
+
+async function sha256OfFile(filePath) {
+  const buf = await fsp.readFile(filePath);
+  return crypto.createHash("sha256").update(buf).digest("hex");
+}
 const documentsPath =
   process.env.NODE_ENV === "development"
     ? path.resolve(__dirname, "../../../storage/documents")
@@ -115,9 +130,57 @@ function apiDocumentEndpoints(app) {
       }
     }
     */
+      // vs-fork Plan 2 §E: AUDIT FIRST, two-row pattern.
+      const tempPath = request.file?.path;
+      const { originalname } = request.file ?? {};
+
+      let auditId;
+      try {
+        const sha256 = tempPath ? await sha256OfFile(tempPath) : null;
+        const row1 = await auditAndPersist({
+          kind: "upload_attempt",
+          request,
+          upload: {
+            filename: originalname,
+            sha256,
+            size_bytes: request.file?.size ?? null,
+            mime: request.file?.mimetype ?? null,
+            processor: "collector",
+          },
+        });
+        auditId = row1.audit_id;
+      } catch (auditErr) {
+        if (tempPath) {
+          await fsp.unlink(tempPath).catch((e) =>
+            console.error("upload audit-fail temp cleanup failed", tempPath, e)
+          );
+        }
+        if (
+          auditErr instanceof FailClosedActive ||
+          auditErr instanceof AuditFailure ||
+          auditErr instanceof PersistFailure
+        ) {
+          response.status(auditErr.status || 503).json({
+            success: false,
+            error: auditErr.message,
+            audit_state:
+              auditErr instanceof FailClosedActive
+                ? "fail_closed"
+                : auditErr.name,
+          });
+          return;
+        }
+        throw auditErr;
+      }
+
+      const collectorStart = Date.now();
+      let outcome = "collector_failed";
+      let collectorMessage = null;
+      let documents = null;
+      let collectorOk = false;
+
       try {
         const Collector = new CollectorApi();
-        const { originalname } = request.file;
         const { addToWorkspaces = "", metadata: _metadata = {} } =
           reqBody(request);
         const metadata =
@@ -127,45 +190,67 @@ function apiDocumentEndpoints(app) {
         const processingOnline = await Collector.online();
 
         if (!processingOnline) {
-          response
-            .status(500)
-            .json({
-              success: false,
-              error: `Document processing API is not online. Document ${originalname} will not be processed automatically.`,
-            })
-            .end();
-          return;
+          collectorMessage = `Document processing API is not online. Document ${originalname} will not be processed automatically.`;
+        } else {
+          const result = await Collector.processDocument(
+            originalname,
+            metadata
+          );
+          documents = result?.documents ?? null;
+          if (result?.success) {
+            outcome = "success";
+            collectorOk = true;
+            Collector.log(
+              `Document ${originalname} uploaded processed and successfully. It is now available in documents.`
+            );
+            if (!!addToWorkspaces) {
+              await Document.api.uploadToWorkspace(
+                addToWorkspaces,
+                documents?.[0]?.location
+              );
+            }
+          } else {
+            collectorMessage = result?.reason || "collector returned success=false";
+          }
         }
+      } catch (collectorErr) {
+        outcome = "collector_failed";
+        collectorMessage = collectorErr.message;
+      }
+      const duration_ms = Date.now() - collectorStart;
 
-        const { success, reason, documents } = await Collector.processDocument(
-          originalname,
-          metadata
+      try {
+        await auditAndPersist({
+          kind: "upload_outcome",
+          auditId,
+          uploadOutcome: { outcome, duration_ms, collector_message: collectorMessage },
+        });
+      } catch (row2Err) {
+        await writeFailClosedFlag(
+          process.env.VS_AUDIT_DIR || "/Vault/audit",
+          `upload_outcome audit failed for audit_id=${auditId}: ${row2Err.message}`
+        ).catch((flagErr) =>
+          console.error(
+            "CRITICAL: dev-API upload Row 2 audit failed AND flag write failed",
+            { auditId, row2Err: row2Err?.message, flagErr: flagErr?.message }
+          )
         );
+        response.status(500).json({
+          success: false,
+          error: `upload_outcome audit failed (audit_id=${auditId}); fail-closed flag attempted.`,
+        });
+        return;
+      }
 
-        if (!success) {
-          return response
-            .status(500)
-            .json({ success: false, error: reason, documents })
-            .end();
-        }
-
-        Collector.log(
-          `Document ${originalname} uploaded processed and successfully. It is now available in documents.`
-        );
+      if (collectorOk) {
         await Telemetry.sendTelemetry("document_uploaded");
         await EventLogs.logEvent("api_document_uploaded", {
           documentName: originalname,
+          audit_id: auditId,
         });
-
-        if (!!addToWorkspaces)
-          await Document.api.uploadToWorkspace(
-            addToWorkspaces,
-            documents?.[0].location
-          );
-        response.status(200).json({ success: true, error: null, documents });
-      } catch (e) {
-        console.error(e.message, e);
-        response.sendStatus(500).end();
+        response.status(200).json({ success: true, error: null, documents, audit_id: auditId });
+      } else {
+        response.status(500).json({ success: false, error: collectorMessage, documents, audit_id: auditId });
       }
     }
   );
@@ -258,8 +343,56 @@ function apiDocumentEndpoints(app) {
         }
       }
       */
+      // vs-fork Plan 2 §E: AUDIT FIRST, two-row pattern.
+      const tempPath = request.file?.path;
+      const { originalname } = request.file ?? {};
+
+      let auditId;
       try {
-        const { originalname } = request.file;
+        const sha256 = tempPath ? await sha256OfFile(tempPath) : null;
+        const row1 = await auditAndPersist({
+          kind: "upload_attempt",
+          request,
+          upload: {
+            filename: originalname,
+            sha256,
+            size_bytes: request.file?.size ?? null,
+            mime: request.file?.mimetype ?? null,
+            processor: "collector",
+          },
+        });
+        auditId = row1.audit_id;
+      } catch (auditErr) {
+        if (tempPath) {
+          await fsp.unlink(tempPath).catch((e) =>
+            console.error("upload audit-fail temp cleanup failed", tempPath, e)
+          );
+        }
+        if (
+          auditErr instanceof FailClosedActive ||
+          auditErr instanceof AuditFailure ||
+          auditErr instanceof PersistFailure
+        ) {
+          response.status(auditErr.status || 503).json({
+            success: false,
+            error: auditErr.message,
+            audit_state:
+              auditErr instanceof FailClosedActive
+                ? "fail_closed"
+                : auditErr.name,
+          });
+          return;
+        }
+        throw auditErr;
+      }
+
+      const collectorStart = Date.now();
+      let outcome = "collector_failed";
+      let collectorMessage = null;
+      let documents = null;
+      let collectorOk = false;
+
+      try {
         const { addToWorkspaces = "", metadata: _metadata = {} } =
           reqBody(request);
         const metadata =
@@ -281,30 +414,19 @@ function apiDocumentEndpoints(app) {
         const Collector = new CollectorApi();
         const processingOnline = await Collector.online();
         if (!processingOnline) {
-          return response
-            .status(500)
-            .json({
-              success: false,
-              error: `Document processing API is not online. Document ${originalname} will not be processed automatically.`,
-            })
-            .end();
-        }
-
-        // Process the uploaded document with metadata
-        const { success, reason, documents } = await Collector.processDocument(
-          originalname,
-          metadata
-        );
-        if (!success) {
-          return response
-            .status(500)
-            .json({ success: false, error: reason, documents })
-            .end();
-        }
-
-        // For each processed document, check if it is already in the desired folder.
-        // If not, move it using similar logic as in the move-files endpoint.
-        for (const doc of documents) {
+          collectorMessage = `Document processing API is not online. Document ${originalname} will not be processed automatically.`;
+        } else {
+          const result = await Collector.processDocument(
+            originalname,
+            metadata
+          );
+          documents = result?.documents ?? null;
+          if (!result?.success) {
+            collectorMessage = result?.reason || "collector returned success=false";
+          } else {
+            // For each processed document, check if it is already in the desired folder.
+            // If not, move it using similar logic as in the move-files endpoint.
+            for (const doc of documents) {
           const currentFolder = path.dirname(doc.location);
           if (currentFolder !== folder) {
             const sourcePath = path.join(
@@ -327,26 +449,58 @@ function apiDocumentEndpoints(app) {
             doc.name = path.basename(doc.location);
           }
         }
+            outcome = "success";
+            collectorOk = true;
+            Collector.log(
+              `Document ${originalname} uploaded, processed, and moved to folder ${folder} successfully.`
+            );
+            if (!!addToWorkspaces) {
+              await Document.api.uploadToWorkspace(
+                addToWorkspaces,
+                documents?.[0]?.location
+              );
+            }
+          }
+        }
+      } catch (collectorErr) {
+        outcome = "collector_failed";
+        collectorMessage = collectorErr.message;
+      }
+      const duration_ms = Date.now() - collectorStart;
 
-        Collector.log(
-          `Document ${originalname} uploaded, processed, and moved to folder ${folder} successfully.`
+      try {
+        await auditAndPersist({
+          kind: "upload_outcome",
+          auditId,
+          uploadOutcome: { outcome, duration_ms, collector_message: collectorMessage },
+        });
+      } catch (row2Err) {
+        await writeFailClosedFlag(
+          process.env.VS_AUDIT_DIR || "/Vault/audit",
+          `upload_outcome audit failed for audit_id=${auditId}: ${row2Err.message}`
+        ).catch((flagErr) =>
+          console.error(
+            "CRITICAL: dev-API folder-upload Row 2 audit failed AND flag write failed",
+            { auditId, row2Err: row2Err?.message, flagErr: flagErr?.message }
+          )
         );
+        response.status(500).json({
+          success: false,
+          error: `upload_outcome audit failed (audit_id=${auditId}); fail-closed flag attempted.`,
+        });
+        return;
+      }
 
+      if (collectorOk) {
         await Telemetry.sendTelemetry("document_uploaded");
         await EventLogs.logEvent("api_document_uploaded", {
           documentName: originalname,
-          folder,
+          folder: request.params?.folderName || "custom-documents",
+          audit_id: auditId,
         });
-
-        if (!!addToWorkspaces)
-          await Document.api.uploadToWorkspace(
-            addToWorkspaces,
-            documents?.[0].location
-          );
-        response.status(200).json({ success: true, error: null, documents });
-      } catch (e) {
-        console.error(e.message, e);
-        response.sendStatus(500).end();
+        response.status(200).json({ success: true, error: null, documents, audit_id: auditId });
+      } else {
+        response.status(500).json({ success: false, error: collectorMessage, documents, audit_id: auditId });
       }
     }
   );
