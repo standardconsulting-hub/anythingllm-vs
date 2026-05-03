@@ -1,6 +1,17 @@
 const { v4: uuidv4 } = require("uuid");
+const prisma = require("../prisma");
 const { DocumentManager } = require("../DocumentManager");
 const { WorkspaceChats } = require("../../models/workspaceChats");
+// vs-fork: Plan 1 Task 8/9 — every LLM-generated response goes
+// through auditAndPersist. The middleware writes the audit JSONL
+// row first; only on success does it run our persistFn (which
+// writes the SQLite turn including audit_id).
+const {
+  auditAndPersist,
+  AuditFailure,
+  PersistFailure,
+  FailClosedActive,
+} = require("../audit/audit-middleware");
 const { getVectorDbClass, getLLMProvider } = require("../helpers");
 const { writeResponseChunk } = require("../helpers/chat/responses");
 const {
@@ -400,11 +411,13 @@ async function chatSync({
   );
 
   // Send the text completion.
+  const startedAt = Date.now();
   const { textResponse, metrics: performanceMetrics } =
     await LLMConnector.getChatCompletion(messages, {
       temperature: workspace?.openAiTemp ?? LLMConnector.defaultTemp,
       user: user,
     });
+  const latencyMs = Date.now() - startedAt;
 
   if (!textResponse) {
     return {
@@ -418,27 +431,91 @@ async function chatSync({
     };
   }
 
-  const { chat } = await WorkspaceChats.new({
-    workspaceId: workspace.id,
-    prompt: message,
-    response: {
-      text: textResponse,
-      sources,
-      attachments,
-      type: chatMode,
-      metrics: performanceMetrics,
-    },
-    threadId: thread?.id || null,
-    apiSessionId: sessionId,
-    user,
-  });
+  // vs-fork Plan 1 Task 9: AUDIT FIRST, PERSIST SECOND. The
+  // request shape on this surface is the dev API (no Express
+  // request available — chatSync is called from the route
+  // handler), so we synthesize a minimal request-like object
+  // for the audit middleware to read user/matter from.
+  let chat;
+  try {
+    await auditAndPersist({
+      request: {
+        body: { message },
+        params: { slug: workspace.slug },
+        user: user
+          ? { id: user.id, email: user.email, username: user.username }
+          : null,
+      },
+      llmResponse: textResponse,
+      retrievedChunks: sources,
+      modelMeta: {
+        model: LLMConnector.model || workspace?.chatModel || null,
+        anythingllm_version: process.env.npm_package_version || null,
+        system_prompt: workspace?.openAiPrompt || "default-v1.0",
+        embedding_model: process.env.EMBEDDING_ENGINE || null,
+        chunking: {
+          chunk_tokens: workspace?.chunk_size ?? null,
+          overlap: workspace?.chunk_overlap ?? null,
+          top_k: workspace?.topN ?? null,
+        },
+        firm_reference_manifest: null,
+        tokens_in: performanceMetrics?.prompt_tokens ?? null,
+        tokens_out: performanceMetrics?.completion_tokens ?? null,
+        latency_ms: latencyMs,
+      },
+      workflow: chatMode === "query" ? "targeted_query" : "open_chat",
+      persistFn: async (auditId) => {
+        const result = await WorkspaceChats.new({
+          workspaceId: workspace.id,
+          prompt: message,
+          response: {
+            text: textResponse,
+            sources,
+            attachments,
+            type: chatMode,
+            metrics: performanceMetrics,
+          },
+          threadId: thread?.id || null,
+          apiSessionId: sessionId,
+          user,
+        });
+        // Tag the SQLite row with the audit_id so history/export
+        // can filter by it. vs-fork Prisma migration 20260503093000
+        // adds the column.
+        if (result?.chat?.id) {
+          await prisma.workspace_chats.update({
+            where: { id: result.chat.id },
+            data: { audit_id: auditId },
+          });
+        }
+        chat = result.chat;
+      },
+    });
+  } catch (err) {
+    if (
+      err instanceof FailClosedActive ||
+      err instanceof AuditFailure ||
+      err instanceof PersistFailure
+    ) {
+      return {
+        id: uuid,
+        type: "abort",
+        textResponse: null,
+        sources: [],
+        close: true,
+        error: err.message,
+        metrics: performanceMetrics,
+      };
+    }
+    throw err;
+  }
 
   return {
     id: uuid,
     type: "textResponse",
     close: true,
     error: null,
-    chatId: chat.id,
+    chatId: chat?.id,
     textResponse,
     sources,
     metrics: performanceMetrics,
