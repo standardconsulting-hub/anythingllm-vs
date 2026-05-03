@@ -186,10 +186,17 @@ app.all("*", function (_, response) {
   response.sendStatus(200);
 });
 
+// vs-fork Plan 2 §D — loopback only, hard-coded. The
+// AnythingLLM server only ever reaches us via
+// http://127.0.0.1:8888; no LAN reachability is required.
+// No env override (regulator-grade: this is one of the
+// network boundary properties Plan 2 §B's PF allowlist
+// relies on; an env flag could be flipped by an operator
+// or a misconfig and silently re-expose the listener).
 app
-  .listen(8888, async () => {
+  .listen(8888, "127.0.0.1", async () => {
     await wipeCollectorStorage();
-    console.log(`Document processor app listening on port 8888`);
+    console.log(`Document processor app listening on 127.0.0.1:8888`);
   })
   .on("error", function (_) {
     process.once("SIGUSR2", function () {
