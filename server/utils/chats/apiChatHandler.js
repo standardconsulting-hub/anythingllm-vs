@@ -868,27 +868,86 @@ async function streamChat({
   }
 
   if (completeText?.length > 0) {
-    const { chat } = await WorkspaceChats.new({
-      workspaceId: workspace.id,
-      prompt: message,
-      response: {
-        text: completeText,
-        sources,
-        type: chatMode,
-        metrics,
-        attachments,
-      },
-      threadId: thread?.id || null,
-      apiSessionId: sessionId,
-      user,
-    });
+    // vs-fork Plan 1 Task 10: AUDIT FIRST, PERSIST SECOND.
+    // Caller is expected to pass a BufferingResponse (see
+    // server/utils/audit/bufferingResponse.js) so the chunks
+    // already written above are still buffered, not on the wire.
+    // After auditAndPersist fsyncs the JSONL row, persistFn writes
+    // the SQLite turn (with audit_id), and only then does the
+    // route handler flush the buffered SSE to the real response.
+    let chat;
+    try {
+      await auditAndPersist({
+        request: {
+          body: { message },
+          params: { slug: workspace.slug },
+          user: user
+            ? { id: user.id, email: user.email, username: user.username }
+            : null,
+        },
+        llmResponse: completeText,
+        retrievedChunks: sources,
+        modelMeta: {
+          model: LLMConnector.model || workspace?.chatModel || null,
+          anythingllm_version: process.env.npm_package_version || null,
+          system_prompt: workspace?.openAiPrompt || "default-v1.0",
+          embedding_model: process.env.EMBEDDING_ENGINE || null,
+          chunking: {
+            chunk_tokens: workspace?.chunk_size ?? null,
+            overlap: workspace?.chunk_overlap ?? null,
+            top_k: workspace?.topN ?? null,
+          },
+          firm_reference_manifest: null,
+          tokens_in: metrics?.prompt_tokens ?? null,
+          tokens_out: metrics?.completion_tokens ?? null,
+          latency_ms: metrics?.duration ? Math.round(metrics.duration * 1000) : null,
+          streamed: true,
+        },
+        workflow: chatMode === "query" ? "targeted_query" : "open_chat",
+        persistFn: async (auditId) => {
+          const result = await WorkspaceChats.new({
+            workspaceId: workspace.id,
+            prompt: message,
+            response: {
+              text: completeText,
+              sources,
+              type: chatMode,
+              metrics,
+              attachments,
+            },
+            threadId: thread?.id || null,
+            apiSessionId: sessionId,
+            user,
+          });
+          if (result?.chat?.id) {
+            await prisma.workspace_chats.update({
+              where: { id: result.chat.id },
+              data: { audit_id: auditId },
+            });
+          }
+          chat = result.chat;
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof FailClosedActive ||
+        err instanceof AuditFailure ||
+        err instanceof PersistFailure
+      ) {
+        // Re-throw — the route handler is responsible for mapping
+        // these to a 503/500 JSON on the real response (the
+        // BufferingResponse captures NO chunks past this point).
+        throw err;
+      }
+      throw err;
+    }
 
     writeResponseChunk(response, {
       uuid,
       type: "finalizeResponseStream",
       close: true,
       error: false,
-      chatId: chat.id,
+      chatId: chat?.id,
       metrics,
       sources,
     });

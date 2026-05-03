@@ -1,9 +1,19 @@
 const { v4: uuidv4 } = require("uuid");
+const prisma = require("../prisma");
 const { DocumentManager } = require("../DocumentManager");
 const { WorkspaceChats } = require("../../models/workspaceChats");
 const { WorkspaceParsedFiles } = require("../../models/workspaceParsedFiles");
 const { getVectorDbClass, getLLMProvider } = require("../helpers");
 const { writeResponseChunk } = require("../helpers/chat/responses");
+// vs-fork Plan 1 Task 10: frontend streaming chat audit. Caller
+// must pass a BufferingResponse so chunks are captured until
+// auditAndPersist fsyncs the JSONL row.
+const {
+  auditAndPersist,
+  AuditFailure,
+  PersistFailure,
+  FailClosedActive,
+} = require("../audit/audit-middleware");
 const { grepAgents } = require("./agents");
 const {
   grepCommand,
@@ -276,18 +286,57 @@ async function streamChatWithWorkspace(
   }
 
   if (completeText?.length > 0) {
-    const { chat } = await WorkspaceChats.new({
-      workspaceId: workspace.id,
-      prompt: message,
-      response: {
-        text: completeText,
-        sources,
-        type: chatMode,
-        attachments,
-        metrics,
+    // vs-fork Plan 1 Task 10: AUDIT FIRST, PERSIST SECOND.
+    let chat;
+    await auditAndPersist({
+      request: {
+        body: { message },
+        params: { slug: workspace.slug },
+        user: user
+          ? { id: user.id, email: user.email, username: user.username }
+          : null,
       },
-      threadId: thread?.id || null,
-      user,
+      llmResponse: completeText,
+      retrievedChunks: sources,
+      modelMeta: {
+        model: LLMConnector.model || workspace?.chatModel || null,
+        anythingllm_version: process.env.npm_package_version || null,
+        system_prompt: workspace?.openAiPrompt || "default-v1.0",
+        embedding_model: process.env.EMBEDDING_ENGINE || null,
+        chunking: {
+          chunk_tokens: workspace?.chunk_size ?? null,
+          overlap: workspace?.chunk_overlap ?? null,
+          top_k: workspace?.topN ?? null,
+        },
+        firm_reference_manifest: null,
+        tokens_in: metrics?.prompt_tokens ?? null,
+        tokens_out: metrics?.completion_tokens ?? null,
+        latency_ms: metrics?.duration ? Math.round(metrics.duration * 1000) : null,
+        streamed: true,
+      },
+      workflow: chatMode === "query" ? "targeted_query" : "open_chat",
+      persistFn: async (auditId) => {
+        const result = await WorkspaceChats.new({
+          workspaceId: workspace.id,
+          prompt: message,
+          response: {
+            text: completeText,
+            sources,
+            type: chatMode,
+            attachments,
+            metrics,
+          },
+          threadId: thread?.id || null,
+          user,
+        });
+        if (result?.chat?.id) {
+          await prisma.workspace_chats.update({
+            where: { id: result.chat.id },
+            data: { audit_id: auditId },
+          });
+        }
+        chat = result.chat;
+      },
     });
 
     writeResponseChunk(response, {
@@ -295,7 +344,7 @@ async function streamChatWithWorkspace(
       type: "finalizeResponseStream",
       close: true,
       error: false,
-      chatId: chat.id,
+      chatId: chat?.id,
       metrics,
     });
     return;

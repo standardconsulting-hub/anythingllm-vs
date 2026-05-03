@@ -15,6 +15,18 @@ const {
 } = require("../../../utils/helpers/chat/responses");
 const { ApiChatHandler } = require("../../../utils/chats/apiChatHandler");
 const { getModelTag } = require("../../utils");
+// vs-fork Plan 1 Task 10: streaming chat audit. The route
+// hands a BufferingResponse to streamChat; chunks are captured
+// in memory until auditAndPersist fsyncs the audit row, then
+// flushTo() commits the SSE to the wire in one go.
+const {
+  BufferingResponse,
+} = require("../../../utils/audit/bufferingResponse");
+const {
+  AuditFailure,
+  PersistFailure,
+  FailClosedActive,
+} = require("../../../utils/audit/audit-middleware");
 
 function apiWorkspaceEndpoints(app) {
   if (!app) return;
@@ -842,23 +854,50 @@ function apiWorkspaceEndpoints(app) {
           return;
         }
 
-        response.setHeader("Cache-Control", "no-cache");
-        response.setHeader("Content-Type", "text/event-stream");
-        response.setHeader("Access-Control-Allow-Origin", "*");
-        response.setHeader("Connection", "keep-alive");
-        response.flushHeaders();
+        // vs-fork Plan 1 Task 10: SSE chunks are captured in
+        // memory while the LLM streams; only after auditAndPersist
+        // fsyncs the JSONL row do we flush to the real response.
+        // Headers are set on the buffer so flushTo replays them
+        // verbatim on the real wire.
+        const bufRes = new BufferingResponse();
+        bufRes.setHeader("Cache-Control", "no-cache");
+        bufRes.setHeader("Content-Type", "text/event-stream");
+        bufRes.setHeader("Access-Control-Allow-Origin", "*");
+        bufRes.setHeader("Connection", "keep-alive");
+        bufRes.flushHeaders();
 
-        await ApiChatHandler.streamChat({
-          response,
-          workspace,
-          message,
-          mode: resolvedMode,
-          user: null,
-          thread: null,
-          sessionId: !!sessionId ? String(sessionId) : null,
-          attachments,
-          reset,
-        });
+        try {
+          await ApiChatHandler.streamChat({
+            response: bufRes,
+            workspace,
+            message,
+            mode: resolvedMode,
+            user: null,
+            thread: null,
+            sessionId: !!sessionId ? String(sessionId) : null,
+            attachments,
+            reset,
+          });
+        } catch (auditErr) {
+          if (
+            auditErr instanceof AuditFailure ||
+            auditErr instanceof PersistFailure ||
+            auditErr instanceof FailClosedActive
+          ) {
+            // Real response is still uncommitted; reply with JSON
+            // so the client doesn't try to parse SSE garbage.
+            response.status(auditErr.status || 503).json({
+              error: auditErr.message,
+              audit_state:
+                auditErr instanceof FailClosedActive
+                  ? "fail_closed"
+                  : auditErr.name,
+            });
+            return;
+          }
+          throw auditErr;
+        }
+
         await Telemetry.sendTelemetry("sent_chat", {
           LLMSelection:
             workspace.chatProvider ?? process.env.LLM_PROVIDER ?? "openai",
@@ -870,9 +909,21 @@ function apiWorkspaceEndpoints(app) {
           workspaceName: workspace?.name,
           chatModel: workspace?.chatModel || "System Default",
         });
-        response.end();
+        bufRes.flushTo(response);
       } catch (e) {
         console.error(e.message, e);
+        // If headers haven't been committed yet (typical, since
+        // BufferingResponse holds them) we can still send a JSON
+        // error. If the response is mid-stream because flushTo
+        // already fired, fall back to the SSE abort + end pattern.
+        if (!response.headersSent) {
+          response.status(500).json({
+            id: uuidv4(),
+            type: "abort",
+            error: e.message,
+          });
+          return;
+        }
         writeResponseChunk(response, {
           id: uuidv4(),
           type: "abort",
