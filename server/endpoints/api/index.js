@@ -6,7 +6,6 @@ const { apiSystemEndpoints } = require("./system");
 const { apiWorkspaceEndpoints } = require("./workspace");
 const { apiWorkspaceThreadEndpoints } = require("./workspaceThread");
 const { apiUserManagementEndpoints } = require("./userManagement");
-const { apiOpenAICompatibleEndpoints } = require("./openai");
 const { apiEmbedEndpoints } = require("./embed");
 
 // All endpoints must be documented and pass through the validApiKey Middleware.
@@ -22,7 +21,6 @@ function developerEndpoints(app, router) {
   apiDocumentEndpoints(router);
   apiWorkspaceThreadEndpoints(router);
   apiUserManagementEndpoints(router);
-  apiOpenAICompatibleEndpoints(router);
   apiEmbedEndpoints(router);
 }
 
