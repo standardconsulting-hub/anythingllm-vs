@@ -403,15 +403,6 @@ const router = createBrowserRouter([
           return { element: <ManagerRoute Component={MobileConnections} /> };
         },
       },
-      {
-        path: "/settings/external-connections/telegram",
-        lazy: async () => {
-          const { default: TelegramBotSettings } = await import(
-            "@/pages/GeneralSettings/Connections/TelegramBot"
-          );
-          return { element: <AdminRoute Component={TelegramBotSettings} /> };
-        },
-      },
       // Catch-all route for 404s
       {
         path: "*",

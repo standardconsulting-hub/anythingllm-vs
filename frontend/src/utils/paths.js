@@ -174,9 +174,6 @@ export default {
     mobileConnections: () => {
       return `/settings/mobile-connections`;
     },
-    telegram: () => {
-      return `/settings/external-connections/telegram`;
-    },
   },
   agents: {
     builder: () => {

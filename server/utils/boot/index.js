@@ -6,7 +6,6 @@ const setupTelemetry = require("../telemetry");
 const eagerLoadContextWindows = require("./eagerLoadContextWindows");
 const markOnboarded = require("./markOnboarded");
 const { PushNotifications } = require("../PushNotifications");
-const { TelegramBotService } = require("../telegramBot");
 
 // Testing SSL? You can make a self signed certificate and point the ENVs to that location
 // make a directory in server called 'sslcert' - cd into it
@@ -44,7 +43,6 @@ function bootSSL(app, port = 3001) {
         new BackgroundService().boot();
         await eagerLoadContextWindows();
         await PushNotifications.setupPushNotificationService();
-        await TelegramBotService.bootIfActive();
         console.log(`Primary server in HTTPS mode listening on 127.0.0.1:${port}`);
       })
       .on("error", catchSigTerms);
@@ -78,7 +76,6 @@ function bootHTTP(app, port = 3001) {
       new BackgroundService().boot();
       await eagerLoadContextWindows();
       await PushNotifications.setupPushNotificationService();
-      await TelegramBotService.bootIfActive();
       console.log(`Primary server in HTTP mode listening on 127.0.0.1:${port}`);
     })
     .on("error", catchSigTerms);
