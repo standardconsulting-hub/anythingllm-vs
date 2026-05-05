@@ -6,8 +6,7 @@ import Highlighter from "react-highlight-words";
 import { Link, useSearchParams } from "react-router-dom";
 import paths from "@/utils/paths";
 import ChatPromptHistory from "./ChatPromptHistory";
-import PublishEntityModal from "@/components/CommunityHub/PublishEntityModal";
-import { useModal } from "@/hooks/useModal";
+// vs-fork Plan 2.5 §C: CommunityHub publish modal removed.
 import System from "@/models/system";
 
 export default function ChatPromptSettings({
@@ -34,18 +33,7 @@ export default function ChatPromptSettings({
   const promptHistoryRef = useRef(null);
   const historyButtonRef = useRef(null);
 
-  // Modals
-  const {
-    isOpen: showPublishModal,
-    closeModal: closePublishModal,
-    openModal: openPublishModal,
-  } = useModal();
-
-  // Derived state
-  const isDirty = prompt !== savedPrompt;
-  const hasBeenModified = savedPrompt?.trim() !== initialPrompt?.trim();
-  const showPublishButton =
-    !isEditing && prompt?.trim().length >= 10 && (isDirty || hasBeenModified);
+  // vs-fork Plan 2.5 §C: CommunityHub publish modal + CTA removed.
 
   // Load variables and handle focus on mount
   useEffect(() => {
@@ -98,11 +86,8 @@ export default function ChatPromptSettings({
     setHasChanges(true);
   };
 
-  const handlePublishFromHistory = (historicalPrompt) => {
-    openPublishModal();
-    setShowPromptHistory(false);
-    setTimeout(() => setPrompt(historicalPrompt), 0);
-  };
+  // vs-fork Plan 2.5 §C: handlePublishFromHistory removed (was the
+  // CommunityHub publish-from-history flow).
 
   // Restore to default system prompt, if no default system prompt is set
   const handleRestoreToDefaultSystemPrompt = () => {
@@ -119,7 +104,6 @@ export default function ChatPromptSettings({
         workspaceSlug={workspace.slug}
         show={showPromptHistory}
         onRestore={handleRestoreFromHistory}
-        onPublishClick={handlePublishFromHistory}
         onClose={() => setShowPromptHistory(false)}
       />
       <div>
@@ -234,32 +218,10 @@ export default function ChatPromptSettings({
                 Restore to Default
               </button>
             )}
-            <PublishPromptCTA
-              hidden={!showPublishButton}
-              onClick={openPublishModal}
-            />
+            {/* vs-fork Plan 2.5 §C: PublishPromptCTA + PublishEntityModal removed */}
           </div>
         </div>
       </div>
-      <PublishEntityModal
-        show={showPublishModal}
-        onClose={closePublishModal}
-        entityType="system-prompt"
-        entity={prompt}
-      />
     </>
-  );
-}
-
-function PublishPromptCTA({ hidden = false, onClick }) {
-  if (hidden) return null;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="border-none text-primary-button hover:text-white light:hover:text-black text-xs font-medium"
-    >
-      Publish to Community Hub
-    </button>
   );
 }

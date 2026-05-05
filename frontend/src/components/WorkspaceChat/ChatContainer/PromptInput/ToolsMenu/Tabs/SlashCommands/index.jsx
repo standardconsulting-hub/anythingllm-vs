@@ -5,7 +5,7 @@ import System from "@/models/system";
 import { useModal } from "@/hooks/useModal";
 import AddPresetModal from "./SlashPresets/AddPresetModal";
 import EditPresetModal from "./SlashPresets/EditPresetModal";
-import PublishEntityModal from "@/components/CommunityHub/PublishEntityModal";
+// vs-fork Plan 2.5 §C: CommunityHub publish modal removed.
 import showToast from "@/utils/toast";
 import { useIsAgentSessionActive } from "@/utils/chat/agent";
 import { PROMPT_INPUT_EVENT } from "@/components/WorkspaceChat/ChatContainer/PromptInput";
@@ -31,14 +31,9 @@ export default function SlashCommandsTab({
     openModal: openEditModal,
     closeModal: closeEditModal,
   } = useModal();
-  const {
-    isOpen: isPublishModalOpen,
-    openModal: openPublishModal,
-    closeModal: closePublishModal,
-  } = useModal();
+  // vs-fork Plan 2.5 §C: CommunityHub publish modal state removed.
   const [presets, setPresets] = useState([]);
   const [selectedPreset, setSelectedPreset] = useState(null);
-  const [presetToPublish, setPresetToPublish] = useState(null);
 
   useEffect(() => {
     fetchPresets();
@@ -156,15 +151,8 @@ export default function SlashCommandsTab({
     setSelectedPreset(null);
   };
 
-  const handlePublishPreset = (preset) => {
-    setPresetToPublish({
-      name: preset.command.slice(1),
-      description: preset.description,
-      command: preset.command,
-      prompt: preset.prompt,
-    });
-    openPublishModal();
-  };
+  // vs-fork Plan 2.5 §C: handlePublishPreset removed (was the
+  // CommunityHub publish flow).
 
   return (
     <>
@@ -180,9 +168,6 @@ export default function SlashCommandsTab({
             )
           }
           onEdit={item.preset ? () => handleEditPreset(item.preset) : undefined}
-          onPublish={
-            item.preset ? () => handlePublishPreset(item.preset) : undefined
-          }
           showMenu={!!item.preset}
           highlighted={highlightedIndex === index}
         />
@@ -223,12 +208,7 @@ export default function SlashCommandsTab({
           preset={selectedPreset}
         />
       )}
-      <PublishEntityModal
-        show={isPublishModalOpen}
-        onClose={closePublishModal}
-        entityType="slash-command"
-        entity={presetToPublish}
-      />
+      {/* vs-fork Plan 2.5 §C: PublishEntityModal removed */}
     </>
   );
 }

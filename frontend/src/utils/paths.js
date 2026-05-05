@@ -180,40 +180,7 @@ export default {
       return `/settings/agents/builder/${uuid}`;
     },
   },
-  communityHub: {
-    website: () => {
-      return import.meta.env.DEV
-        ? `http://localhost:5173`
-        : `https://hub.anythingllm.com`;
-    },
-    /**
-     * View more items of a given type on the community hub.
-     * @param {string} type - The type of items to view more of. Should be kebab-case.
-     * @returns {string} The path to view more items of the given type.
-     */
-    viewMoreOfType: function (type) {
-      return `${this.website()}/list/${type}`;
-    },
-    viewItem: function (type, id) {
-      return `${this.website()}/i/${type}/${id}`;
-    },
-    trending: () => {
-      return `/settings/community-hub/trending`;
-    },
-    authentication: () => {
-      return `/settings/community-hub/authentication`;
-    },
-    importItem: (importItemId) => {
-      return `/settings/community-hub/import-item${importItemId ? `?id=${importItemId}` : ""}`;
-    },
-    profile: function (username) {
-      if (username) return `${this.website()}/u/${username}`;
-      return `${this.website()}/me`;
-    },
-    noPrivateItems: () => {
-      return "https://docs.anythingllm.com/community-hub/faq#no-private-items";
-    },
-  },
+  // vs-fork Plan 2.5 §C: paths.communityHub.* helpers removed.
 
   // TODO: Migrate all docs.anythingllm.com links to the new docs.
   documentation: {

@@ -13,7 +13,7 @@ import {
   Plugs,
 } from "@phosphor-icons/react";
 import AgentIcon from "@/media/animations/agent-static.png";
-import CommunityHubIcon from "@/media/illustrations/community-hub.png";
+// vs-fork Plan 2.5 §C: CommunityHub illustration removed.
 import useUser from "@/hooks/useUser";
 import { isMobile } from "react-device-detect";
 import Footer from "../Footer";
@@ -308,37 +308,7 @@ const SidebarOptions = ({ user = null, t }) => (
           flex={true}
           roles={["admin"]}
         />
-        <Option
-          btnText={t("settings.community-hub.title")}
-          icon={
-            <img
-              src={CommunityHubIcon}
-              alt="Community Hub"
-              className="h-5 w-5 flex-shrink-0 light:invert"
-            />
-          }
-          user={user}
-          childOptions={[
-            {
-              btnText: t("settings.community-hub.trending"),
-              href: paths.communityHub.trending(),
-              flex: true,
-              roles: ["admin"],
-            },
-            {
-              btnText: t("settings.community-hub.your-account"),
-              href: paths.communityHub.authentication(),
-              flex: true,
-              roles: ["admin"],
-            },
-            {
-              btnText: t("settings.community-hub.import-item"),
-              href: paths.communityHub.importItem(),
-              flex: true,
-              roles: ["admin"],
-            },
-          ]}
-        />
+        {/* vs-fork Plan 2.5 §C: CommunityHub menu removed */}
         <Option
           btnText={t("settings.customization")}
           icon={<PencilSimpleLine className="h-5 w-5 flex-shrink-0" />}

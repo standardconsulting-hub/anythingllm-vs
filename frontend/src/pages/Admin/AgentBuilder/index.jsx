@@ -9,7 +9,7 @@ import AgentFlows from "@/models/agentFlows";
 import { useTheme } from "@/hooks/useTheme";
 import HeaderMenu from "./HeaderMenu";
 import paths from "@/utils/paths";
-import PublishEntityModal from "@/components/CommunityHub/PublishEntityModal";
+// vs-fork Plan 2.5 §C: CommunityHub publish modal removed.
 
 const DEFAULT_BLOCKS = [
   {
@@ -337,12 +337,7 @@ export default function AgentBuilder() {
       }}
       className="relative w-screen h-screen flex flex-col bg-theme-bg-primary overflow-clip"
     >
-      <PublishEntityModal
-        show={showPublishModal}
-        onClose={() => setShowPublishModal(false)}
-        entityType="agent-flow"
-        entity={flowEntity}
-      />
+      {/* vs-fork Plan 2.5 §C: PublishEntityModal removed */}
       <HeaderMenu
         agentName={agentName}
         availableFlows={availableFlows}
