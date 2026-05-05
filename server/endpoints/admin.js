@@ -28,7 +28,7 @@ const { validatedRequest } = require("../utils/middleware/validatedRequest");
 // (the multi-user equivalent of "change password") require a
 // TOTP step-up within the last 5 minutes.
 const { requireFreshStepUp } = require("../utils/middleware/requireTotp");
-const ImportedPlugin = require("../utils/agents/imported");
+// vs-fork Plan 2.5 §D: agent-imported-plugins surface stripped.
 const {
   simpleSSOLoginDisabledMiddleware,
 } = require("../utils/middleware/simpleSSOEnabled");
@@ -426,7 +426,8 @@ function adminEndpoints(app) {
               requestedSettings[label] = safeJsonParse(setting?.value, []);
               break;
             case "imported_agent_skills":
-              requestedSettings[label] = ImportedPlugin.listImportedPlugins();
+              // vs-fork Plan 2.5 §D: agent surface removed.
+              requestedSettings[label] = [];
               break;
             case "custom_app_name":
               requestedSettings[label] = setting?.value || null;

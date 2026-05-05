@@ -15,11 +15,8 @@ class BackgroundService {
       timeout: "1m",
       interval: "12hr",
     },
-    {
-      name: "cleanup-generated-files",
-      timeout: "5m",
-      interval: "8hr",
-    },
+    // vs-fork Plan 2.5 §D: cleanup-generated-files job removed
+    // along with the agent surface that produced those files.
   ];
 
   #documentSyncJobs = [

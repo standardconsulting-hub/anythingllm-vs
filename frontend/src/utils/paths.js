@@ -143,9 +143,7 @@ export default {
     branding: () => {
       return "/settings/branding";
     },
-    agentSkills: () => {
-      return "/settings/agents";
-    },
+    // vs-fork Plan 2.5 §D: paths.settings.agentSkills removed.
     chat: () => {
       return "/settings/chat";
     },
@@ -172,14 +170,7 @@ export default {
       return `/settings/mobile-connections`;
     },
   },
-  agents: {
-    builder: () => {
-      return `/settings/agents/builder`;
-    },
-    editAgent: (uuid) => {
-      return `/settings/agents/builder/${uuid}`;
-    },
-  },
+  // vs-fork Plan 2.5 §D: paths.agents.* removed.
   // vs-fork Plan 2.5 §C: paths.communityHub.* helpers removed.
 
   // TODO: Migrate all docs.anythingllm.com links to the new docs.

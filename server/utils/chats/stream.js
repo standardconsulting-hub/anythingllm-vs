@@ -13,7 +13,10 @@ const {
   PersistFailure,
   FailClosedActive,
 } = require("../audit/audit-middleware");
-const { grepAgents } = require("./agents");
+// vs-fork Plan 2.5 §D: agent surface stripped. grepAgents is
+// gone; isAgentRequest detects @agent-prefixed messages so
+// streamChatWithWorkspace can audit and reject them.
+const { isAgentRequest } = require("./apiChatHandler");
 const {
   grepCommand,
   VALID_COMMANDS,
@@ -48,17 +51,52 @@ async function streamChatWithWorkspace(
     return;
   }
 
-  // If is agent enabled chat we will exit this flow early.
-  const isAgentChat = await grepAgents({
-    uuid,
-    response,
-    message: updatedMessage,
-    user,
-    workspace,
-    thread,
-    attachments,
-  });
-  if (isAgentChat) return;
+  // vs-fork Plan 2.5 §D: agent mode is disabled. The web stream
+  // routes (endpoints/chat.js — `POST /api/workspace/:slug/stream-chat`
+  // and the thread variant) wrap `response` in a BufferingResponse
+  // before calling streamChatWithWorkspace; chunks accumulate in
+  // memory and the route handler runs flushTo() on success. If
+  // audit throws below, the route handler's AuditFailure catch
+  // sends 503 and the buffer is discarded (audit-or-nothing).
+  if (isAgentRequest({ message: updatedMessage })) {
+    const rejectionText =
+      "Agent mode is disabled in this build. Plan 2.5 §D " +
+      "removed the agent surface; the message was not " +
+      "processed.";
+    writeResponseChunk(response, {
+      uuid,
+      sources: [],
+      type: "abort",
+      textResponse: rejectionText,
+      error: "agent_mode_disabled",
+      close: true,
+    });
+    await auditAndPersist({
+      request: {
+        body: { message: updatedMessage },
+        params: { slug: workspace.slug },
+        user: user
+          ? { id: user.id, email: user.email, username: user.username }
+          : null,
+      },
+      llmResponse: rejectionText,
+      retrievedChunks: [],
+      modelMeta: {
+        model: null,
+        anythingllm_version: process.env.npm_package_version || null,
+        system_prompt: null,
+        embedding_model: null,
+        chunking: { chunk_tokens: null, overlap: null, top_k: null },
+        firm_reference_manifest: null,
+        tokens_in: 0,
+        tokens_out: 0,
+        latency_ms: 0,
+        streamed: true,
+      },
+      workflow: "agent_rejected",
+    });
+    return;
+  }
 
   const LLMConnector = getLLMProvider({
     provider: workspace?.chatProvider,

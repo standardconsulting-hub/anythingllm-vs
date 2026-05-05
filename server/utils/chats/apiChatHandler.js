@@ -19,10 +19,12 @@ const {
   recentChatHistory,
   grepAllSlashCommands,
 } = require("./index");
-const {
-  EphemeralAgentHandler,
-  EphemeralEventListener,
-} = require("../agents/ephemeral");
+// vs-fork Plan 2.5 §D: agent surface stripped. The
+// EphemeralAgentHandler / EphemeralEventListener imports are
+// removed. `isAgentRequest` (defined at the bottom of this
+// file) detects @agent-prefixed messages so chatSync /
+// streamChat can audit and reject them rather than dispatch
+// to the agent runtime.
 const { Telemetry } = require("../../models/telemetry");
 const { CollectorApi } = require("../collectorApi");
 const fs = require("fs");
@@ -165,64 +167,52 @@ async function chatSync({
   const processedMessage = await grepAllSlashCommands(message);
   message = processedMessage;
 
-  if (
-    await EphemeralAgentHandler.isAgentInvocation({
-      message,
-      workspace,
-      chatMode,
-    })
-  ) {
-    await Telemetry.sendTelemetry("agent_chat_started");
-
-    // Initialize the EphemeralAgentHandler to handle non-continuous
-    // conversations with agents since this is over REST.
-    const agentHandler = new EphemeralAgentHandler({
-      uuid,
-      workspace,
-      prompt: message,
-      userId: user?.id || null,
-      threadId: thread?.id || null,
-      sessionId,
-      attachments,
+  // vs-fork Plan 2.5 §D: agent mode is disabled. The agent
+  // runtime was removed; @agent-prefixed messages are
+  // audited as a rejection (so the trail records the prompt +
+  // the disabled-feature response) and a chatSync-shaped
+  // abort is returned. auditAndPersist runs through the same
+  // contract the LLM-completion path uses (verified at
+  // apiChatHandler.js audit call site) — request:{body, params,
+  // user}, llmResponse, retrievedChunks, modelMeta, workflow,
+  // persistFn. No persistFn: the rejection isn't a real chat
+  // and doesn't belong in workspace_chats.
+  if (isAgentRequest({ message })) {
+    const rejectionText =
+      "Agent mode is disabled in this build. Plan 2.5 §D " +
+      "removed the agent surface; the message was not " +
+      "processed.";
+    await auditAndPersist({
+      request: {
+        body: { message },
+        params: { slug: workspace.slug },
+        user: user
+          ? { id: user.id, email: user.email, username: user.username }
+          : null,
+      },
+      llmResponse: rejectionText,
+      retrievedChunks: [],
+      modelMeta: {
+        model: null,
+        anythingllm_version: process.env.npm_package_version || null,
+        system_prompt: null,
+        embedding_model: null,
+        chunking: { chunk_tokens: null, overlap: null, top_k: null },
+        firm_reference_manifest: null,
+        tokens_in: 0,
+        tokens_out: 0,
+        latency_ms: 0,
+      },
+      workflow: "agent_rejected",
     });
-
-    // Establish event listener that emulates websocket calls
-    // in Aibitat so that we can keep the same interface in Aibitat
-    // but use HTTP.
-    const eventListener = new EphemeralEventListener();
-    await agentHandler.init();
-    await agentHandler.createAIbitat({ handler: eventListener });
-    agentHandler.startAgentCluster();
-
-    // The cluster has started and now we wait for close event since
-    // this is a synchronous call for an agent, so we return everything at once.
-    // After this, we conclude the call as we normally do.
-    return await eventListener
-      .waitForClose()
-      .then(async ({ thoughts, textResponse }) => {
-        await WorkspaceChats.new({
-          workspaceId: workspace.id,
-          prompt: String(message),
-          response: {
-            text: textResponse,
-            sources: [],
-            attachments,
-            type: chatMode,
-            thoughts,
-          },
-          include: false,
-          apiSessionId: sessionId,
-        });
-        return {
-          id: uuid,
-          type: "textResponse",
-          sources: [],
-          close: true,
-          error: null,
-          textResponse,
-          thoughts,
-        };
-      });
+    return {
+      id: uuid,
+      type: "abort",
+      sources: [],
+      close: true,
+      error: "agent_mode_disabled",
+      textResponse: rejectionText,
+    };
   }
 
   const LLMConnector = getLLMProvider({
@@ -578,63 +568,52 @@ async function streamChat({
   const processedMessage = await grepAllSlashCommands(message);
   message = processedMessage;
 
-  if (
-    await EphemeralAgentHandler.isAgentInvocation({
-      message,
-      workspace,
-      chatMode,
-    })
-  ) {
-    await Telemetry.sendTelemetry("agent_chat_started");
-
-    // Initialize the EphemeralAgentHandler to handle non-continuous
-    // conversations with agents since this is over REST.
-    const agentHandler = new EphemeralAgentHandler({
+  // vs-fork Plan 2.5 §D: agent mode is disabled. Same shape as
+  // chatSync's rejection above, but writes a single chunk to
+  // the BufferingResponse the route handler created (the
+  // `response` parameter IS the buffer — verified at the
+  // route-side bufRes.flushTo pattern). The route handler
+  // runs flushTo on its happy path; if audit throws below, the
+  // route handler's AuditFailure catch sends 503 and the
+  // buffer is discarded (audit-or-nothing).
+  if (isAgentRequest({ message })) {
+    const rejectionText =
+      "Agent mode is disabled in this build. Plan 2.5 §D " +
+      "removed the agent surface; the message was not " +
+      "processed.";
+    writeResponseChunk(response, {
       uuid,
-      workspace,
-      prompt: message,
-      userId: user?.id || null,
-      threadId: thread?.id || null,
-      sessionId,
-      attachments,
+      sources: [],
+      type: "abort",
+      textResponse: rejectionText,
+      error: "agent_mode_disabled",
+      close: true,
     });
-
-    // Establish event listener that emulates websocket calls
-    // in Aibitat so that we can keep the same interface in Aibitat
-    // but use HTTP.
-    const eventListener = new EphemeralEventListener();
-    await agentHandler.init();
-    await agentHandler.createAIbitat({ handler: eventListener });
-    agentHandler.startAgentCluster();
-
-    // The cluster has started and now we wait for close event since
-    // and stream back any results we get from agents as they come in.
-    return eventListener
-      .streamAgentEvents(response, uuid)
-      .then(async ({ thoughts, textResponse }) => {
-        await WorkspaceChats.new({
-          workspaceId: workspace.id,
-          prompt: String(message),
-          response: {
-            text: textResponse,
-            sources: [],
-            attachments: attachments,
-            type: chatMode,
-            thoughts,
-          },
-          include: true,
-          threadId: thread?.id || null,
-          apiSessionId: sessionId,
-        });
-        writeResponseChunk(response, {
-          uuid,
-          type: "finalizeResponseStream",
-          textResponse,
-          thoughts,
-          close: true,
-          error: false,
-        });
-      });
+    await auditAndPersist({
+      request: {
+        body: { message },
+        params: { slug: workspace.slug },
+        user: user
+          ? { id: user.id, email: user.email, username: user.username }
+          : null,
+      },
+      llmResponse: rejectionText,
+      retrievedChunks: [],
+      modelMeta: {
+        model: null,
+        anythingllm_version: process.env.npm_package_version || null,
+        system_prompt: null,
+        embedding_model: null,
+        chunking: { chunk_tokens: null, overlap: null, top_k: null },
+        firm_reference_manifest: null,
+        tokens_in: 0,
+        tokens_out: 0,
+        latency_ms: 0,
+        streamed: true,
+      },
+      workflow: "agent_rejected",
+    });
+    return;
   }
 
   const LLMConnector = getLLMProvider({
@@ -961,7 +940,30 @@ async function streamChat({
   return;
 }
 
+// vs-fork Plan 2.5 §D: inline replacement for the now-deleted
+// WorkspaceAgentInvocation.parseAgents +
+// EphemeralAgentHandler.#isAgentCommandInvocation detection.
+//
+// Live parseAgents used `promptString.startsWith("@agent")`:
+// case-sensitive, byte-start, no leading whitespace tolerance.
+// We mirror that exactly so the rejection set matches what the
+// original agent dispatcher would have routed.
+//
+// We deliberately do NOT route on chatMode === "automatic"
+// (the EphemeralAgentHandler.isAgentInvocation second branch).
+// Pre-strip, that branch only triggered when
+// Workspace.supportsNativeToolCalling(workspace) was also
+// true; non-tool-calling providers in automatic mode went
+// through normal LLM completion. Post-strip, automatic-mode
+// chats with non-tool-calling providers must keep working —
+// rejecting every automatic-mode chat would be a regression.
+function isAgentRequest({ message }) {
+  if (typeof message !== "string") return false;
+  return message.startsWith("@agent");
+}
+
 module.exports.ApiChatHandler = {
   chatSync,
   streamChat,
 };
+module.exports.isAgentRequest = isAgentRequest;

@@ -20,23 +20,17 @@ const { extensionEndpoints } = require("./endpoints/extensions");
 const { bootHTTP, bootSSL } = require("./utils/boot");
 const { workspaceThreadEndpoints } = require("./endpoints/workspaceThreads");
 const { documentEndpoints } = require("./endpoints/document");
-const { agentWebsocket } = require("./endpoints/agentWebsocket");
-const {
-  agentSkillWhitelistEndpoints,
-} = require("./endpoints/agentSkillWhitelist");
-const { agentFileServerEndpoints } = require("./endpoints/agentFileServer");
-const { experimentalEndpoints } = require("./endpoints/experimental");
+// vs-fork Plan 2.5 §D: agent surface stripped. Removed:
+// agentWebsocket, agentSkillWhitelistEndpoints,
+// agentFileServerEndpoints, experimentalEndpoints (its callees
+// were the agent-plugin imports), agentFlowEndpoints,
+// mcpServersEndpoints, outlookAgentEndpoints,
+// googleAgentSkillEndpoints. The chat handlers still respond to
+// @agent-prefixed messages, but with an audited rejection
+// rather than dispatching to the agent runtime.
 const { browserExtensionEndpoints } = require("./endpoints/browserExtension");
-const { agentFlowEndpoints } = require("./endpoints/agentFlows");
-const { mcpServersEndpoints } = require("./endpoints/mcpServers");
 const { mobileEndpoints } = require("./endpoints/mobile");
 const { webPushEndpoints } = require("./endpoints/webPush");
-const {
-  outlookAgentEndpoints,
-} = require("./endpoints/utils/outlookAgentUtils");
-const {
-  googleAgentSkillEndpoints,
-} = require("./endpoints/utils/googleAgentSkillEndpoints");
 // vs-fork: MFA endpoints under /api/auth/mfa/. Plan 1.5 v1.2.1 Task 3.
 const { mfaEndpoints } = require("./endpoints/auth/mfa");
 const { httpLogger } = require("./middleware/httpLogger");
@@ -83,17 +77,9 @@ adminEndpoints(apiRouter);
 inviteEndpoints(apiRouter);
 utilEndpoints(apiRouter);
 documentEndpoints(apiRouter);
-agentWebsocket(apiRouter);
-agentSkillWhitelistEndpoints(apiRouter);
-agentFileServerEndpoints(apiRouter);
-experimentalEndpoints(apiRouter);
 developerEndpoints(app, apiRouter);
-agentFlowEndpoints(apiRouter);
-mcpServersEndpoints(apiRouter);
 mobileEndpoints(apiRouter);
 webPushEndpoints(apiRouter);
-outlookAgentEndpoints(apiRouter);
-googleAgentSkillEndpoints(apiRouter);
 
 // Externally facing browser extension endpoints
 browserExtensionEndpoints(apiRouter);

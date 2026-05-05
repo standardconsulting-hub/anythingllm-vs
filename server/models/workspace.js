@@ -618,24 +618,14 @@ const Workspace = {
    * @param {Workspace} workspace - The workspace object to check
    * @returns {Promise<boolean>}
    */
-  supportsNativeToolCalling: async function (workspace = {}) {
-    if (!workspace) return false;
-    const { getBaseLLMProviderModel } = require("../utils/helpers");
-    const AIbitat = require("../utils/agents/aibitat");
-    const provider =
-      workspace?.agentProvider ??
-      workspace?.chatProvider ??
-      process.env.LLM_PROVIDER;
-    const model =
-      workspace?.agentModel ??
-      workspace?.chatModel ??
-      getBaseLLMProviderModel({ provider });
-    const agentConfig = { provider, model };
-    const agentProvider = new AIbitat(agentConfig).getProviderForConfig(
-      agentConfig
-    );
-    const nativeToolCalling = await agentProvider.supportsNativeToolCalling?.();
-    return nativeToolCalling;
+  // vs-fork Plan 2.5 §D: agent surface removed. The function is
+  // retained because callers (e.g. agentEnabledForWorkspace
+  // below, and any frontend consumer reading the workspace
+  // settings shape) still call it; it now unconditionally
+  // returns false so the "agent command is available"
+  // downstream logic short-circuits to false too.
+  supportsNativeToolCalling: async function (_workspace = {}) {
+    return false;
   },
 
   /**

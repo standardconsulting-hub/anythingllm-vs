@@ -1506,41 +1506,10 @@ function systemEndpoints(app) {
     }
   );
 
-  app.post(
-    "/system/validate-sql-connection",
-    [validatedRequest, flexUserRoleValid([ROLES.admin])],
-    async (request, response) => {
-      const { engine, connectionString } = reqBody(request);
-      try {
-        if (!engine || !connectionString) {
-          return response.status(400).json({
-            success: false,
-            error: "Both engine and connection details are required.",
-          });
-        }
-
-        const {
-          validateConnection,
-        } = require("../utils/agents/aibitat/plugins/sql-agent/SQLConnectors");
-        const result = await validateConnection(engine, { connectionString });
-
-        if (!result.success) {
-          return response.status(200).json({
-            success: false,
-            error: `Unable to connect to ${engine}. Please verify your connection details.`,
-          });
-        }
-
-        response.status(200).json(result);
-      } catch (error) {
-        console.error("SQL validation error:", error);
-        response.status(500).json({
-          success: false,
-          error: `Unable to connect to ${engine}. Please verify your connection details.`,
-        });
-      }
-    }
-  );
+  // vs-fork Plan 2.5 §D: /system/validate-sql-connection removed
+  // (was the SQL-agent connection probe; the SQL agent itself
+  // lived under utils/agents/aibitat/plugins/sql-agent/ which is
+  // deleted by §D).
 }
 
 module.exports = { systemEndpoints };

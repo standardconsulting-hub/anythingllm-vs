@@ -12,7 +12,7 @@ import {
   Toolbox,
   Plugs,
 } from "@phosphor-icons/react";
-import AgentIcon from "@/media/animations/agent-static.png";
+// vs-fork Plan 2.5 §D: AgentIcon import removed.
 // vs-fork Plan 2.5 §C: CommunityHub illustration removed.
 import useUser from "@/hooks/useUser";
 import { isMobile } from "react-device-detect";
@@ -294,20 +294,7 @@ const SidebarOptions = ({ user = null, t }) => (
             },
           ]}
         />
-        <Option
-          btnText={t("settings.agent-skills")}
-          icon={
-            <img
-              src={AgentIcon}
-              alt="Agent"
-              className="h-5 w-5 flex-shrink-0 light:invert"
-            />
-          }
-          href={paths.settings.agentSkills()}
-          user={user}
-          flex={true}
-          roles={["admin"]}
-        />
+        {/* vs-fork Plan 2.5 §D: agent-skills menu Option removed */}
         {/* vs-fork Plan 2.5 §C: CommunityHub menu removed */}
         <Option
           btnText={t("settings.customization")}

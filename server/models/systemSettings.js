@@ -9,9 +9,14 @@ const { MetaGenerator } = require("../utils/boot/MetaGenerator");
 const { PGVector } = require("../utils/vectorDbProviders/pgvector");
 const { NativeEmbedder } = require("../utils/EmbeddingEngines/native");
 const { getBaseLLMProviderModel } = require("../utils/helpers");
-const {
-  ConnectionStringParser,
-} = require("../utils/agents/aibitat/plugins/sql-agent/SQLConnectors/utils");
+// vs-fork Plan 2.5 §D: ConnectionStringParser was used by the
+// SQL-agent connection-string-secrets-redaction code below; the
+// SQL-agent plugin is gone. Stub kept so the (unused) parser
+// reference doesn't break.
+class ConnectionStringParser {
+  constructor(_) {}
+  parse() { return {}; }
+}
 
 function isNullOrNaN(value) {
   if (value === null) return true;
@@ -210,36 +215,13 @@ const SystemSettings = {
         return JSON.stringify([]);
       }
     },
-    gmail_agent_config: async (update) => {
-      const GmailBridge = require("../utils/agents/aibitat/plugins/gmail/lib");
-      try {
-        if (!update) return JSON.stringify({});
-
-        const newConfig =
-          typeof update === "string" ? safeJsonParse(update, {}) : update;
-        const existingConfig = safeJsonParse(
-          (await SystemSettings.get({ label: "gmail_agent_config" }))?.value,
-          {}
-        );
-
-        const mergedConfig = { ...existingConfig };
-
-        mergeStringField(mergedConfig, newConfig, "deploymentId");
-        mergeStringField(
-          mergedConfig,
-          newConfig,
-          "apiKey",
-          (v) => !v.match(/^\*+$/)
-        );
-
-        return JSON.stringify(mergedConfig);
-      } catch (e) {
-        console.error(`Could not validate gmail agent config:`, e.message);
-        return JSON.stringify({});
-      } finally {
-        GmailBridge.reset();
-      }
-    },
+    // vs-fork Plan 2.5 §D: gmail agent bridge removed. Validator
+    // returns the original update untouched so the setting can
+    // still be persisted (kept for forward-compat if the surface
+    // is ever restored), but no GmailBridge.reset() is fired.
+    gmail_agent_config: async (update) => JSON.stringify(
+      typeof update === "string" ? safeJsonParse(update, {}) : (update || {})
+    ),
     disabled_google_calendar_skills: (updates) => {
       try {
         const skills = updates.split(",").filter((skill) => !!skill);
@@ -249,40 +231,10 @@ const SystemSettings = {
         return JSON.stringify([]);
       }
     },
-    google_calendar_agent_config: async (update) => {
-      const GoogleCalendarBridge = require("../utils/agents/aibitat/plugins/google-calendar/lib");
-      try {
-        if (!update) return JSON.stringify({});
-
-        const newConfig =
-          typeof update === "string" ? safeJsonParse(update, {}) : update;
-        const existingConfig = safeJsonParse(
-          (await SystemSettings.get({ label: "google_calendar_agent_config" }))
-            ?.value,
-          {}
-        );
-
-        const mergedConfig = { ...existingConfig };
-
-        mergeStringField(mergedConfig, newConfig, "deploymentId");
-        mergeStringField(
-          mergedConfig,
-          newConfig,
-          "apiKey",
-          (v) => !v.match(/^\*+$/)
-        );
-
-        return JSON.stringify(mergedConfig);
-      } catch (e) {
-        console.error(
-          `Could not validate google calendar agent config:`,
-          e.message
-        );
-        return JSON.stringify({});
-      } finally {
-        GoogleCalendarBridge.reset();
-      }
-    },
+    // vs-fork Plan 2.5 §D: google-calendar agent bridge removed.
+    google_calendar_agent_config: async (update) => JSON.stringify(
+      typeof update === "string" ? safeJsonParse(update, {}) : (update || {})
+    ),
     disabled_outlook_skills: (updates) => {
       try {
         const skills = updates.split(",").filter((skill) => !!skill);
@@ -293,7 +245,7 @@ const SystemSettings = {
       }
     },
     outlook_agent_config: async (update) => {
-      const OutlookBridge = require("../utils/agents/aibitat/plugins/outlook/lib");
+      // vs-fork Plan 2.5 §D: OutlookBridge import + reset removed.
       try {
         if (!update) return JSON.stringify({});
 
@@ -329,8 +281,6 @@ const SystemSettings = {
       } catch (e) {
         console.error(`Could not validate outlook agent config:`, e.message);
         return JSON.stringify({});
-      } finally {
-        OutlookBridge.reset();
       }
     },
     agent_sql_connections: async (updates) => {
@@ -389,10 +339,12 @@ const SystemSettings = {
   },
   currentSettings: async function () {
     const { hasVectorCachedFiles } = require("../utils/files");
-    const {
-      ToolReranker,
-    } = require("../utils/agents/aibitat/utils/toolReranker");
-    const AIbitat = require("../utils/agents/aibitat");
+    // vs-fork Plan 2.5 §D: AIbitat + ToolReranker removed.
+    // Stub the constants the agent-skill settings expose so
+    // the existing currentSettings shape stays stable for any
+    // remaining frontend consumer.
+    const ToolReranker = { isEnabled: () => false, getTopN: () => 0 };
+    const AIbitat = { defaultMaxToolCalls: () => 0 };
 
     const llmProvider = process.env.LLM_PROVIDER;
     const vectorDB = process.env.VECTOR_DB;
@@ -905,31 +857,12 @@ const SystemSettings = {
     };
   },
 
+  // vs-fork Plan 2.5 §D: SQL-agent surface removed. Always
+  // return an empty list — the setting may still exist in the
+  // DB from prior installs, but the SQL-agent plugin that
+  // would consume it is gone.
   agent_sql_connections: async function () {
-    const setting = await SystemSettings.get({
-      label: "agent_sql_connections",
-    });
-    if (!setting) return [];
-
-    const connections = safeJsonParse(setting.value, []).map((conn) => {
-      let scheme = conn.engine;
-      if (scheme === "sql-server") scheme = "mssql";
-      if (scheme === "postgresql") scheme = "postgres";
-      const parser = new ConnectionStringParser({ scheme });
-
-      const parsed = parser.parse(conn.connectionString);
-      return {
-        ...conn,
-        username: parsed.username,
-        password: parsed.password,
-        host: parsed.hosts?.[0]?.host,
-        port: parsed.hosts?.[0]?.port,
-        database: parsed.endpoint,
-        scheme: parsed.scheme,
-      };
-    });
-
-    return connections;
+    return [];
   },
   getFeatureFlags: async function () {
     return {

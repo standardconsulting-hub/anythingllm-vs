@@ -164,39 +164,9 @@ const router = createBrowserRouter([
           };
         },
       },
-      {
-        path: "/settings/agents",
-        lazy: async () => {
-          const { default: AdminAgents } = await import("@/pages/Admin/Agents");
-          return { element: <AdminRoute Component={AdminAgents} /> };
-        },
-      },
-      {
-        path: "/settings/agents/builder",
-        lazy: async () => {
-          const { default: AgentBuilder } = await import(
-            "@/pages/Admin/AgentBuilder"
-          );
-          return {
-            element: (
-              <AdminRoute Component={AgentBuilder} hideUserMenu={true} />
-            ),
-          };
-        },
-      },
-      {
-        path: "/settings/agents/builder/:flowId",
-        lazy: async () => {
-          const { default: AgentBuilder } = await import(
-            "@/pages/Admin/AgentBuilder"
-          );
-          return {
-            element: (
-              <AdminRoute Component={AgentBuilder} hideUserMenu={true} />
-            ),
-          };
-        },
-      },
+      // vs-fork Plan 2.5 §D: agent admin routes removed
+      // (/settings/agents, /settings/agents/builder,
+      // /settings/agents/builder/:flowId).
       {
         path: "/settings/event-logs",
         lazy: async () => {
