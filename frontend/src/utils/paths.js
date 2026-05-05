@@ -159,9 +159,6 @@ export default {
     privacy: () => {
       return "/settings/privacy";
     },
-    embedChatWidgets: () => {
-      return `/settings/embed-chat-widgets`;
-    },
     browserExtension: () => {
       return `/settings/browser-extension`;
     },

@@ -81,8 +81,6 @@ model users {
   must_rotate_password         Boolean                       @default(false)
   workspace_chats              workspace_chats[]
   workspace_users              workspace_users[]
-  embed_configs                embed_configs[]
-  embed_chats                  embed_chats[]
   threads                      workspace_threads[]
   recovery_codes               recovery_codes[]
   password_reset_tokens        password_reset_tokens[]
@@ -215,7 +213,6 @@ model workspaces {
   workspace_users              workspace_users[]
   documents                    workspace_documents[]
   workspace_suggested_messages workspace_suggested_messages[]
-  embed_configs                embed_configs[]
   threads                      workspace_threads[]
   workspace_agent_invocations  workspace_agent_invocations[]
   prompt_history               prompt_history[]
@@ -307,41 +304,6 @@ model cache_data {
   expiresAt     DateTime?
   createdAt     DateTime  @default(now())
   lastUpdatedAt DateTime  @default(now())
-}
-
-model embed_configs {
-  id                         Int           @id @default(autoincrement())
-  uuid                       String        @unique
-  enabled                    Boolean       @default(false)
-  chat_mode                  String        @default("query")
-  allowlist_domains          String?
-  allow_model_override       Boolean       @default(false)
-  allow_temperature_override Boolean       @default(false)
-  allow_prompt_override      Boolean       @default(false)
-  max_chats_per_day          Int?
-  max_chats_per_session      Int?
-  message_limit              Int?          @default(20)
-  workspace_id               Int
-  createdBy                  Int?
-  usersId                    Int?
-  createdAt                  DateTime      @default(now())
-  workspace                  workspaces    @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
-  embed_chats                embed_chats[]
-  users                      users?        @relation(fields: [usersId], references: [id])
-}
-
-model embed_chats {
-  id                     Int           @id @default(autoincrement())
-  prompt                 String
-  response               String
-  session_id             String
-  include                Boolean       @default(true)
-  connection_information String?
-  embed_id               Int
-  usersId                Int?
-  createdAt              DateTime      @default(now())
-  embed_config           embed_configs @relation(fields: [embed_id], references: [id], onDelete: Cascade)
-  users                  users?        @relation(fields: [usersId], references: [id])
 }
 
 model event_logs {

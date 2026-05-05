@@ -204,15 +204,6 @@ const router = createBrowserRouter([
           return { element: <AdminRoute Component={AdminLogs} /> };
         },
       },
-      {
-        path: "/settings/embed-chat-widgets",
-        lazy: async () => {
-          const { default: ChatEmbedWidgets } = await import(
-            "@/pages/GeneralSettings/ChatEmbedWidgets"
-          );
-          return { element: <AdminRoute Component={ChatEmbedWidgets} /> };
-        },
-      },
       // Manager routes
       {
         path: "/settings/security",
