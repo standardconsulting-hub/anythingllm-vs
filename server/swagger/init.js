@@ -37,8 +37,7 @@ const endpointsFiles = [
   "../endpoints/api/system/index.js",
   "../endpoints/api/workspaceThread/index.js",
   "../endpoints/api/userManagement/index.js",
-  "../endpoints/api/openai/index.js",
-  "../endpoints/api/embed/index.js",
+  // vs-fork Plan 2.5 §A/§B: openai-compat + embed dev APIs removed.
 ];
 
 swaggerAutogen(outputFile, endpointsFiles, doc).then(({ data }) => {

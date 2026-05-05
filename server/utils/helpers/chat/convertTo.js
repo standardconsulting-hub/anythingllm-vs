@@ -2,7 +2,7 @@
 // for external use by the user.
 
 const { WorkspaceChats } = require("../../../models/workspaceChats");
-const { EmbedChats } = require("../../../models/embedChats");
+// vs-fork Plan 2.5 §B: EmbedChats removed along with the embed widget.
 const { safeJsonParse } = require("../../http");
 const { SystemSettings } = require("../../../models/systemSettings");
 
@@ -52,13 +52,10 @@ async function prepareChatsForExport(format = "jsonl", chatType = "workspace") {
       id: "asc",
     });
   } else if (chatType === "embed") {
-    chats = await EmbedChats.whereWithEmbedAndWorkspace(
-      {},
-      null,
-      {
-        id: "asc",
-      },
-      null
+    // vs-fork Plan 2.5 §B: embed widget surface removed.
+    throw new Error(
+      "Embed chat export not supported: the embed widget surface " +
+      "was removed in Plan 2.5 §B."
     );
   } else {
     throw new Error(`Invalid chat type: ${chatType}`);
