@@ -323,6 +323,19 @@ async function streamChatWithWorkspace(
   }
 
   if (completeText?.length > 0) {
+    // vs-fork Plan 4 §G: workflow detection.
+    // Default → chatMode-derived (targeted_query | open_chat).
+    // If the operator's message began with a slash command that
+    // grepCommand recognised (so `updatedMessage !== message`), the
+    // workflow is the slash-token name minus its leading slashes.
+    // This surfaces the slash-command path to the audit row so
+    // operators can trace which preset workflow ran.
+    let workflow = chatMode === "query" ? "targeted_query" : "open_chat";
+    const leadingToken = (message || "").trim().split(/\s+/)[0] || "";
+    if (leadingToken.startsWith("/") && updatedMessage !== message) {
+      workflow = leadingToken.replace(/^\/+/, "");
+    }
+
     // vs-fork Plan 1 Task 10: AUDIT FIRST, PERSIST SECOND.
     let chat;
     await auditAndPersist({
@@ -351,7 +364,7 @@ async function streamChatWithWorkspace(
         latency_ms: metrics?.duration ? Math.round(metrics.duration * 1000) : null,
         streamed: true,
       },
-      workflow: chatMode === "query" ? "targeted_query" : "open_chat",
+      workflow,
       persistFn: async (auditId) => {
         // BLOCK 1 + BLOCK 3 fix: see apiChatHandler.chatSync.
         const result = await WorkspaceChats.new({
