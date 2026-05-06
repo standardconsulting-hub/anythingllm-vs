@@ -311,8 +311,11 @@ class MetaGenerator {
             <meta charset="UTF-8" />
             <meta name="viewport" content="width=device-width, initial-scale=1.0" />
             ${this.#assembleMeta()}
+            <title>VS Declaration</title>
+            <link rel="icon" type="image/svg+xml" href="/vs-favicon.svg">
             <script type="module" crossorigin src="/index.js"></script>
             <link rel="stylesheet" href="/index.css">
+            <link rel="stylesheet" href="/vs-overrides.css">
           </head>
           <body>
             <div id="root" class="h-screen"></div>
