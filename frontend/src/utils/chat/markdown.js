@@ -78,6 +78,54 @@ markdown.renderer.rules.image = function (tokens, idx) {
 
 markdown.use(markdownItKatexPlugin);
 
+// vs-fork Plan 4 §A.4b: tag any blockquote whose first text line
+// starts with the literal `[VS-BANNER]` token with class="vs-banner"
+// AND strip the marker token from the rendered content. The §A.1
+// CSS selector `blockquote.vs-banner` then applies the Signal Teal
+// left-border + bold treatment. Marker is template-enforced by the
+// Plan 4 §B.1 default system prompt; without this rule the marker
+// would render visibly to the operator. Defense-in-depth: strip-on-
+// render means even a visible-banner copy attack cannot exfiltrate
+// the marker into a regular blockquote.
+markdown.core.ruler.push("vs_banner_blockquote", (state) => {
+  const tokens = state.tokens;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].type !== "blockquote_open") continue;
+    // The first inline token after blockquote_open carries the
+    // initial paragraph's text content.
+    let inlineIdx = -1;
+    for (let j = i + 1; j < tokens.length; j++) {
+      if (tokens[j].type === "blockquote_close") break;
+      if (tokens[j].type === "inline") {
+        inlineIdx = j;
+        break;
+      }
+    }
+    if (inlineIdx === -1) continue;
+    const inlineTok = tokens[inlineIdx];
+    const content = (inlineTok.content || "").trimStart();
+    if (!content.startsWith("[VS-BANNER]")) continue;
+    // Tag the blockquote.
+    const open = tokens[i];
+    const existing = open.attrGet("class");
+    open.attrSet(
+      "class",
+      existing ? `${existing} vs-banner` : "vs-banner"
+    );
+    // Strip the marker from inline content + first text child token.
+    const stripped = content.replace(/^\[VS-BANNER\]\s*/, "");
+    inlineTok.content = stripped;
+    if (Array.isArray(inlineTok.children)) {
+      for (const child of inlineTok.children) {
+        if (child.type === "text" && typeof child.content === "string") {
+          child.content = child.content.replace(/^\[VS-BANNER\]\s*/, "");
+          break;
+        }
+      }
+    }
+  }
+});
+
 export default function renderMarkdown(text = "") {
   return markdown.render(text);
 }
