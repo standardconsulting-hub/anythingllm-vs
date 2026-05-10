@@ -305,10 +305,17 @@ async function streamChatWithWorkspace(
 
   // vs-fork Plan 4 §C.4e: opt-in cross-workspace retrieval
   // (browser-stream surface — same contract as the dev-API
-  // surfaces in apiChatHandler.js).
+  // surfaces in apiChatHandler.js). `input` MUST be the
+  // post-grepCommand text (`updatedMessage`) so firm-reference
+  // and matter retrieval search the same query — using raw
+  // `message` here on a slash-command turn would search the
+  // unexpanded command and silently break cross-workspace
+  // semantics. The dev-API surface in apiChatHandler.js does
+  // not run grepCommand at all, so it correctly uses `message`
+  // there. (Plan 4 §C sub-plan v4 line 499; exec-review BLOCK-3.)
   const firmRefResult = await fetchFirmReferenceChunks({
     workspace,
-    input: message,
+    input: updatedMessage,
     matterChunks: sources,
     k: workspace?.topN,
     similarityThreshold: workspace?.similarityThreshold,
