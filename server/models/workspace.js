@@ -138,6 +138,18 @@ const Workspace = {
         return "default";
       return value;
     },
+    // vs-fork Plan 4 §C.4g: cross_workspace_with is an
+    // opt-in namespace pointer. The only allowed value is
+    // "firm-reference" (FIRM_REFERENCE_NAMESPACE in
+    // server/utils/chats/firm-reference.js); anything else
+    // — empty string from a cleared toggle, an unknown
+    // namespace from a hostile PATCH, a non-string — is
+    // coerced to null so the helper short-circuits cleanly.
+    cross_workspace_with: (value) => {
+      if (!value || typeof value !== "string") return null;
+      if (value !== "firm-reference") return null;
+      return value;
+    },
   },
 
   /**

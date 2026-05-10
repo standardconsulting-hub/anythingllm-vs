@@ -54,6 +54,30 @@ describe("Workspace.writable / cross_workspace_with (Plan 4 §C.4a + §C.5)", ()
     expect(validated).toEqual({ cross_workspace_with: "firm-reference" });
   });
 
+  it("validateFields() coerces empty string to null (cleared toggle path)", () => {
+    expect(Workspace.validateFields({ cross_workspace_with: "" })).toEqual({
+      cross_workspace_with: null,
+    });
+  });
+
+  it("validateFields() coerces unknown namespace to null (hostile PATCH guard)", () => {
+    expect(
+      Workspace.validateFields({ cross_workspace_with: "some-other-namespace" })
+    ).toEqual({ cross_workspace_with: null });
+  });
+
+  it("validateFields() coerces non-string values to null", () => {
+    expect(Workspace.validateFields({ cross_workspace_with: null })).toEqual({
+      cross_workspace_with: null,
+    });
+    expect(
+      Workspace.validateFields({ cross_workspace_with: ["firm-reference"] })
+    ).toEqual({ cross_workspace_with: null });
+    expect(Workspace.validateFields({ cross_workspace_with: 42 })).toEqual({
+      cross_workspace_with: null,
+    });
+  });
+
   it("end-to-end: create → update → reload preserves cross_workspace_with", async () => {
     const slug = `vs-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     slugsCreated.push(slug);

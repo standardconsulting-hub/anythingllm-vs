@@ -8,6 +8,7 @@ import DocumentSimilarityThreshold from "./DocumentSimilarityThreshold";
 import ResetDatabase from "./ResetDatabase";
 import VectorCount from "./VectorCount";
 import VectorSearchMode from "./VectorSearchMode";
+import CrossWorkspaceToggle from "./CrossWorkspaceToggle";
 import CTAButton from "@/components/lib/CTAButton";
 
 export default function VectorDatabase({ workspace }) {
@@ -54,6 +55,10 @@ export default function VectorDatabase({ workspace }) {
           <VectorCount reload={true} workspace={workspace} />
         </div>
         <VectorSearchMode workspace={workspace} setHasChanges={setHasChanges} />
+        <CrossWorkspaceToggle
+          workspace={workspace}
+          setHasChanges={setHasChanges}
+        />
         <MaxContextSnippets
           workspace={workspace}
           setHasChanges={setHasChanges}
