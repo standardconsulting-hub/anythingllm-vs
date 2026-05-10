@@ -10,8 +10,21 @@ import {
   THOUGHT_REGEX_OPEN,
   ThoughtChainComponent,
 } from "../ThoughtContainer";
+import CitationWarning from "../CitationWarning";
 
-const PromptReply = ({ uuid, reply, pending, error, sources = [] }) => {
+// §E.2 commit 5: PromptReply renders the active stream. The
+// citation_check field arrives only after the stream closes
+// and the route handler sends the finalised audit row, but the
+// banner component returns null for falsy citation_check so
+// passing the prop early (when undefined) is safe.
+const PromptReply = ({
+  uuid,
+  reply,
+  pending,
+  error,
+  sources = [],
+  citation_check,
+}) => {
   if (!reply && sources.length === 0 && !pending && !error) return null;
 
   if (pending) {
@@ -41,6 +54,7 @@ const PromptReply = ({ uuid, reply, pending, error, sources = [] }) => {
   return (
     <div key={uuid} className="flex justify-start w-full">
       <div className="py-4 pl-0 pr-4 flex flex-col w-full">
+        <CitationWarning citation_check={citation_check} />
         <RenderAssistantChatContent
           key={`${uuid}-prompt-reply-content`}
           message={reply}

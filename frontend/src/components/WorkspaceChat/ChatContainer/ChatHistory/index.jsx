@@ -323,6 +323,9 @@ function buildMessages({
           sources={props.sources}
           error={props.error}
           closed={props.closed}
+          // §E.2 commit 5: forward shape-only citation post-check
+          // from the audit-aware response blob.
+          citation_check={props.citation_check}
         />
       );
     } else {
@@ -344,6 +347,8 @@ function buildMessages({
           forkThread={forkThread}
           metrics={props.metrics}
           outputs={props.outputs}
+          // §E.2 commit 5: forward shape-only citation post-check.
+          citation_check={props.citation_check}
         />
       );
     }

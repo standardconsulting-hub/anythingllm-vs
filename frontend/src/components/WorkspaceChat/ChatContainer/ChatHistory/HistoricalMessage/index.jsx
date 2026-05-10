@@ -20,6 +20,7 @@ import { Link } from "react-router-dom";
 import { chatQueryRefusalResponse } from "@/utils/chat";
 import HistoricalOutputs from "./HistoricalOutputs";
 import { openImageLightbox } from "@/components/ImageLightbox";
+import CitationWarning from "../CitationWarning";
 
 const HistoricalMessage = ({
   uuid: uuidProp,
@@ -37,6 +38,11 @@ const HistoricalMessage = ({
   forkThread,
   metrics = {},
   outputs = [],
+  // §E.2 commit 5: shape-only citation post-check signal sourced
+  // from the persisted chat row's response blob (commit 2 plumbed
+  // it through convertToChatHistory). null/undefined for legacy
+  // rows; the banner component handles those silently.
+  citation_check,
 }) => {
   // Freeze uuid on first render. User messages arrive without a uuid and this value
   // is used as the wrapper div's `key` — a default param fallback would regenerate
@@ -134,6 +140,9 @@ const HistoricalMessage = ({
       className={`${isDeleted ? "animate-remove" : ""} flex justify-start w-full group`}
     >
       <div className="py-4 px-4 md:pl-0 flex flex-col w-full">
+        {role === "assistant" && (
+          <CitationWarning citation_check={citation_check} />
+        )}
         {isEditing ? (
           <EditMessageForm
             role={role}
