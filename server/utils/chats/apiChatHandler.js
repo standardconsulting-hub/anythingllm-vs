@@ -11,6 +11,20 @@ const {
   PersistFailure,
   FailClosedActive,
 } = require("../audit/audit-middleware");
+// vs-fork Plan 4 §E.2 commit 3: shape-only citation post-check
+// runs after every LLM completion. Result is merged into the
+// response blob (so convertToChatHistory + the frontend
+// CitationWarning banner can read it) and `result.ok` is passed
+// to auditAndPersist via modelMeta.citation_check_shape (commit
+// 4 wires the audit-middleware reader). Refusal turns that have
+// no LLM completion get a sentinel `no_llm_completion` rather
+// than a subprocess invocation.
+const { runCitationPostcheck } = require("../audit/citation-postcheck");
+const REFUSAL_CITATION_CHECK = Object.freeze({
+  ok: true,
+  flagged_sentences: [],
+  reason: "no_llm_completion",
+});
 const { getVectorDbClass, getLLMProvider } = require("../helpers");
 const { writeResponseChunk } = require("../helpers/chat/responses");
 const {
@@ -240,6 +254,8 @@ async function chatSync({
         attachments: attachments,
         type: chatMode,
         metrics: {},
+        // §E.2 commit 3: refusal turn — no LLM completion to check.
+        citation_check: REFUSAL_CITATION_CHECK,
       },
       include: false,
       apiSessionId: sessionId,
@@ -368,6 +384,8 @@ async function chatSync({
         attachments: attachments,
         type: chatMode,
         metrics: {},
+        // §E.2 commit 3: refusal turn — no LLM completion to check.
+        citation_check: REFUSAL_CITATION_CHECK,
       },
       threadId: thread?.id || null,
       include: false,
@@ -420,6 +438,13 @@ async function chatSync({
     };
   }
 
+  // §E.2 commit 3: shape-only citation post-check after the LLM
+  // completion. Helper never throws — script timeout / error /
+  // missing-script all return a result object with reason set.
+  // Runs BEFORE auditAndPersist so the boolean shape can flow
+  // through modelMeta into the audit row (commit 4 wires reader).
+  const citationCheck = await runCitationPostcheck(textResponse);
+
   // vs-fork Plan 1 Task 9: AUDIT FIRST, PERSIST SECOND. The
   // request shape on this surface is the dev API (no Express
   // request available — chatSync is called from the route
@@ -451,6 +476,10 @@ async function chatSync({
         tokens_in: performanceMetrics?.prompt_tokens ?? null,
         tokens_out: performanceMetrics?.completion_tokens ?? null,
         latency_ms: latencyMs,
+        // §E.2 commit 3: boolean shape for the audit row. Commit 4
+        // adds the audit-middleware reader; until then this field
+        // is set on modelMeta but ignored at JSONL emission.
+        citation_check_shape: citationCheck.ok,
       },
       workflow: chatMode === "query" ? "targeted_query" : "open_chat",
       persistFn: async (auditId) => {
@@ -465,6 +494,10 @@ async function chatSync({
             attachments,
             type: chatMode,
             metrics: performanceMetrics,
+            // §E.2 commit 3: full result (ok + flagged_sentences +
+            // reason) lands in the chat-row blob so commit 5's
+            // frontend banner can render flagged sentences.
+            citation_check: citationCheck,
           },
           threadId: thread?.id || null,
           apiSessionId: sessionId,
@@ -651,6 +684,8 @@ async function streamChat({
         attachments: attachments,
         type: chatMode,
         metrics: {},
+        // §E.2 commit 3: refusal turn — no LLM completion to check.
+        citation_check: REFUSAL_CITATION_CHECK,
       },
       threadId: thread?.id || null,
       apiSessionId: sessionId,
@@ -790,6 +825,8 @@ async function streamChat({
         attachments: attachments,
         type: chatMode,
         metrics: {},
+        // §E.2 commit 3: refusal turn — no LLM completion to check.
+        citation_check: REFUSAL_CITATION_CHECK,
       },
       threadId: thread?.id || null,
       apiSessionId: sessionId,
@@ -844,6 +881,11 @@ async function streamChat({
   }
 
   if (completeText?.length > 0) {
+    // §E.2 commit 3: shape-only citation post-check after the
+    // streamed LLM completion is fully assembled. Same contract
+    // as chatSync above.
+    const citationCheck = await runCitationPostcheck(completeText);
+
     // vs-fork Plan 1 Task 10: AUDIT FIRST, PERSIST SECOND.
     // Caller is expected to pass a BufferingResponse (see
     // server/utils/audit/bufferingResponse.js) so the chunks
@@ -878,6 +920,9 @@ async function streamChat({
           tokens_out: metrics?.completion_tokens ?? null,
           latency_ms: metrics?.duration ? Math.round(metrics.duration * 1000) : null,
           streamed: true,
+          // §E.2 commit 3: boolean shape for audit row (commit 4
+          // wires reader).
+          citation_check_shape: citationCheck.ok,
         },
         workflow: chatMode === "query" ? "targeted_query" : "open_chat",
         persistFn: async (auditId) => {
@@ -891,6 +936,8 @@ async function streamChat({
               type: chatMode,
               metrics,
               attachments,
+              // §E.2 commit 3: full result for the chat-row blob.
+              citation_check: citationCheck,
             },
             threadId: thread?.id || null,
             apiSessionId: sessionId,
