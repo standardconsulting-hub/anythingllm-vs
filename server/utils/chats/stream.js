@@ -13,6 +13,16 @@ const {
   PersistFailure,
   FailClosedActive,
 } = require("../audit/audit-middleware");
+// vs-fork Plan 4 §E.2 commit 4: same shape-only citation
+// post-check pattern as apiChatHandler (commit 3) — full result
+// onto the chat-row blob, boolean shape onto modelMeta for the
+// audit row.
+const { runCitationPostcheck } = require("../audit/citation-postcheck");
+const REFUSAL_CITATION_CHECK = Object.freeze({
+  ok: true,
+  flagged_sentences: [],
+  reason: "no_llm_completion",
+});
 // vs-fork Plan 2.5 §D: agent surface stripped. grepAgents is
 // gone; isAgentRequest detects @agent-prefixed messages so
 // streamChatWithWorkspace can audit and reject them.
@@ -131,6 +141,8 @@ async function streamChatWithWorkspace(
         sources: [],
         type: chatMode,
         attachments,
+        // §E.2 commit 4: refusal turn — no LLM completion to check.
+        citation_check: REFUSAL_CITATION_CHECK,
       },
       threadId: thread?.id || null,
       include: false,
@@ -266,6 +278,8 @@ async function streamChatWithWorkspace(
         sources: [],
         type: chatMode,
         attachments,
+        // §E.2 commit 4: refusal turn — no LLM completion to check.
+        citation_check: REFUSAL_CITATION_CHECK,
       },
       threadId: thread?.id || null,
       include: false,
@@ -336,6 +350,11 @@ async function streamChatWithWorkspace(
       workflow = leadingToken.replace(/^\/+/, "");
     }
 
+    // §E.2 commit 4: shape-only citation post-check after the
+    // streamed LLM completion is fully assembled. Same contract
+    // as apiChatHandler. Helper never throws.
+    const citationCheck = await runCitationPostcheck(completeText);
+
     // vs-fork Plan 1 Task 10: AUDIT FIRST, PERSIST SECOND.
     let chat;
     await auditAndPersist({
@@ -363,6 +382,9 @@ async function streamChatWithWorkspace(
         tokens_out: metrics?.completion_tokens ?? null,
         latency_ms: metrics?.duration ? Math.round(metrics.duration * 1000) : null,
         streamed: true,
+        // §E.2 commit 4: boolean shape — audit-middleware reads
+        // this on the same commit (schema bump below).
+        citation_check_shape: citationCheck.ok,
       },
       workflow,
       persistFn: async (auditId) => {
@@ -376,6 +398,8 @@ async function streamChatWithWorkspace(
             type: chatMode,
             attachments,
             metrics,
+            // §E.2 commit 4: full result for the chat-row blob.
+            citation_check: citationCheck,
           },
           threadId: thread?.id || null,
           user,

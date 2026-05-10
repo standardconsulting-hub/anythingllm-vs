@@ -212,7 +212,21 @@ async function auditAndPersist({
       latency_ms: modelMeta.latency_ms ?? null,
       cw_pass: false,
       workflow: workflow ?? null,
-      citation_check: "not_applicable_v1",
+      // vs-fork Plan 4 §E.2 commit 4: citation_check is now a
+      // boolean shape sourced from modelMeta.citation_check_shape
+      // (set by apiChatHandler / stream.js after they've called
+      // runCitationPostcheck on the LLM response). `null` is the
+      // explicit "no shape was supplied" sentinel — used when a
+      // caller (e.g. agent rejection paths) does not run the
+      // post-check. Legacy rows on disk before this commit
+      // carried the string "not_applicable_v1"; the analyser
+      // (Plan 6 §8.5 vs-acceptance-audit) must tolerate BOTH
+      // shapes (string for legacy, boolean | null for post-§E.2
+      // rows) because JSONL is append-only.
+      citation_check:
+        typeof modelMeta.citation_check_shape === "boolean"
+          ? modelMeta.citation_check_shape
+          : null,
     };
   } else if (kind === "upload_attempt") {
     if (!upload) throw new Error("upload_attempt requires `upload` payload");

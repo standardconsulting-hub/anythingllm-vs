@@ -301,6 +301,98 @@ describe("audit middleware — auditAndPersist", () => {
     }
   });
 
+  // §E.2 commit 4 — citation_check schema bump. Was a static
+  // string "not_applicable_v1"; is now a boolean | null sourced
+  // from modelMeta.citation_check_shape. JSONL is append-only,
+  // so legacy rows on disk keep the string forever and the
+  // analyser (Plan 6 §8.5 vs-acceptance-audit) tolerates BOTH
+  // shapes. These tests cover the new write path only.
+  describe("citation_check schema (Plan 4 §E.2 commit 4)", () => {
+    it("emits boolean true when modelMeta.citation_check_shape is true", async () => {
+      const entry = await auditAndPersist({
+        auditDir: tmpDir,
+        request: baseRequest,
+        llmResponse: "hello",
+        retrievedChunks: [],
+        modelMeta: { ...modelMeta, citation_check_shape: true },
+        workflow: "targeted_query",
+        persistFn: async () => {},
+      });
+      expect(entry.citation_check).toBe(true);
+      // Persisted JSONL row matches.
+      const today = new Date(entry.ts);
+      const yyyy = today.getUTCFullYear();
+      const mm = String(today.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(today.getUTCDate()).padStart(2, "0");
+      const file = path.join(tmpDir, `queries-${yyyy}-${mm}-${dd}.jsonl`);
+      const persisted = JSON.parse(fs.readFileSync(file, "utf8").trim());
+      expect(persisted.citation_check).toBe(true);
+    });
+
+    it("emits boolean false when modelMeta.citation_check_shape is false", async () => {
+      const entry = await auditAndPersist({
+        auditDir: tmpDir,
+        request: baseRequest,
+        llmResponse: "hello",
+        retrievedChunks: [],
+        modelMeta: { ...modelMeta, citation_check_shape: false },
+        workflow: "targeted_query",
+        persistFn: async () => {},
+      });
+      expect(entry.citation_check).toBe(false);
+    });
+
+    it("emits null when modelMeta.citation_check_shape is undefined (caller opted out)", async () => {
+      // The agent_rejected paths in apiChatHandler never run
+      // runCitationPostcheck because no LLM completion happens.
+      // They omit citation_check_shape; the audit row should
+      // record null rather than a stale "not_applicable_v1".
+      const entry = await auditAndPersist({
+        auditDir: tmpDir,
+        request: baseRequest,
+        llmResponse: "rejected",
+        retrievedChunks: [],
+        modelMeta, // no citation_check_shape key
+        workflow: "agent_rejected",
+        persistFn: async () => {},
+      });
+      expect(entry.citation_check).toBeNull();
+    });
+
+    it("emits null when modelMeta.citation_check_shape is a non-boolean (string, number, null)", async () => {
+      // Defensive: only typeof === "boolean" maps through. A
+      // mis-typed caller (e.g. legacy code that passed the v1
+      // string sentinel) gets coerced to null rather than
+      // contaminating the JSONL with a non-boolean.
+      const cases = ["not_applicable_v1", 0, 1, null, undefined];
+      for (const v of cases) {
+        const entry = await auditAndPersist({
+          auditDir: tmpDir,
+          request: baseRequest,
+          llmResponse: "hello",
+          retrievedChunks: [],
+          modelMeta: { ...modelMeta, citation_check_shape: v },
+          workflow: "targeted_query",
+          persistFn: async () => {},
+        });
+        expect(entry.citation_check).toBeNull();
+      }
+    });
+
+    it("does NOT emit the legacy 'not_applicable_v1' string on any post-§E.2 row", async () => {
+      const entry = await auditAndPersist({
+        auditDir: tmpDir,
+        request: baseRequest,
+        llmResponse: "hello",
+        retrievedChunks: [],
+        modelMeta: { ...modelMeta, citation_check_shape: true },
+        workflow: "targeted_query",
+        persistFn: async () => {},
+      });
+      expect(entry.citation_check).not.toBe("not_applicable_v1");
+    });
+  });
+
   it("newAuditId has a non-regressing ms-prefix and is unique per call", async () => {
     // The format is `<12-hex ms timestamp>-<16-hex random>`. We
     // guarantee ms-prefix monotonicity (audit ordering by id at
