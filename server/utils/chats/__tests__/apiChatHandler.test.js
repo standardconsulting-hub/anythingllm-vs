@@ -258,7 +258,9 @@ describe("apiChatHandler.chatSync — Plan 4 §C audit shape (BLOCK-1)", () => {
       sessionId: "sess-2",
     });
 
-    const audit = readLatestJsonl(tmpDir)[0];
+    const rows = readLatestJsonl(tmpDir);
+    expect(rows).toHaveLength(1);
+    const audit = rows[0];
 
     expect(audit.cw_pass).toBe(false);
     expect(audit.cross_workspace_with).toBeUndefined();
@@ -291,7 +293,9 @@ describe("apiChatHandler.chatSync — Plan 4 §C audit shape (BLOCK-1)", () => {
     expect(result.type).toBe("textResponse");
     expect(result.textResponse).toBe(baseWorkspace.queryRefusalResponse);
 
-    const audit = readLatestJsonl(tmpDir)[0];
+    const rows = readLatestJsonl(tmpDir);
+    expect(rows).toHaveLength(1);
+    const audit = rows[0];
 
     expect(audit.prompt).toBe("any question");
     expect(audit.response).toBe(baseWorkspace.queryRefusalResponse);

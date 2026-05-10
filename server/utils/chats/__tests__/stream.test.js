@@ -61,10 +61,16 @@ jest.mock("../index", () => ({
     rawHistory: [],
     chatHistory: [],
   }),
-  // grepCommand returns the message as-is (no slash command in
-  // these tests); BLOCK-3 regression test covers the call-site
-  // arg contract statically.
-  grepCommand: jest.fn().mockImplementation(async (m) => m),
+  // grepCommand returns a DIFFERENT value than the input so the
+  // cw_pass=true scenario can prove at runtime — not just by
+  // static analysis — that fetchFirmReferenceChunks received the
+  // post-grepCommand text. Closeout review FLAG-1: the original
+  // pass-through mock would have let BLOCK-3 quietly re-emerge
+  // because the helper-saw-the-raw-literal assertion held under
+  // both correct and broken behaviours.
+  grepCommand: jest
+    .fn()
+    .mockImplementation(async (m) => `expanded:${m}`),
   VALID_COMMANDS: {},
 }));
 
@@ -225,7 +231,9 @@ describe("streamChatWithWorkspace — Plan 4 §C audit shape (BLOCK-1)", () => {
       []
     );
 
-    const audit = readLatestJsonl(tmpDir)[0];
+    const rows = readLatestJsonl(tmpDir);
+    expect(rows).toHaveLength(1);
+    const audit = rows[0];
     expect(audit.cw_pass).toBe(true);
     expect(audit.cross_workspace_with).toEqual(["firm-reference"]);
     expect(audit.cross_workspace_chunks).toBe(2);
@@ -236,11 +244,17 @@ describe("streamChatWithWorkspace — Plan 4 §C audit shape (BLOCK-1)", () => {
     expect(WorkspaceChats.new).toHaveBeenCalledTimes(1);
     expect(WorkspaceChats.new.mock.calls[0][0].auditId).toBe(audit.audit_id);
 
-    // Sanity: helper got the post-grepCommand text (in this test
-    // grepCommand passes through unchanged, so input === message).
+    // Runtime BLOCK-3 assertion: the grepCommand mock returns
+    // `expanded:${message}` (see jest.mock("../index") above), so
+    // the helper MUST have been called with that distinct expanded
+    // value — not the raw message. If a future edit reverts the
+    // call site to `input: message`, this assertion fails loudly
+    // alongside the static regression guard at
+    // stream-firm-reference-regression.test.js. (Closeout FLAG-1
+    // closure.)
     expect(firmRef.fetchFirmReferenceChunks).toHaveBeenCalledWith(
       expect.objectContaining({
-        input: "what is the firm SOP for sensitive material?",
+        input: "expanded:what is the firm SOP for sensitive material?",
       })
     );
   });
@@ -264,7 +278,9 @@ describe("streamChatWithWorkspace — Plan 4 §C audit shape (BLOCK-1)", () => {
       []
     );
 
-    const audit = readLatestJsonl(tmpDir)[0];
+    const rows = readLatestJsonl(tmpDir);
+    expect(rows).toHaveLength(1);
+    const audit = rows[0];
     expect(audit.cw_pass).toBe(false);
     expect(audit.cross_workspace_with).toBeUndefined();
     expect(audit.cross_workspace_chunks).toBeUndefined();
@@ -293,8 +309,17 @@ describe("streamChatWithWorkspace — Plan 4 §C audit shape (BLOCK-1)", () => {
       []
     );
 
-    const audit = readLatestJsonl(tmpDir)[0];
-    expect(audit.prompt).toBe("any question");
+    const rows = readLatestJsonl(tmpDir);
+    expect(rows).toHaveLength(1);
+    const audit = rows[0];
+    // stream.js's §5.3 refusal audit uses `body: { message:
+    // updatedMessage }` (stream.js:149) — i.e. the post-grepCommand
+    // form, which is the established browser-stream contract. The
+    // grepCommand mock prepends "expanded:", so the audit prompt
+    // reflects the expanded text. (The dev-API surface in
+    // apiChatHandler does NOT run grepCommand, so its §5.3 audit
+    // sees the raw message.)
+    expect(audit.prompt).toBe("expanded:any question");
     expect(audit.response).toBe(baseWorkspace.queryRefusalResponse);
     expect(audit.cw_pass).toBe(false);
     expect(audit.cross_workspace_with).toBeUndefined();
