@@ -56,6 +56,13 @@ const Workspace = {
     "agentModel",
     "queryRefusalResponse",
     "vectorSearchMode",
+    // vs-fork Plan 4 §C.5: cross-workspace retrieval
+    // opt-in. Without this allowlist entry, the
+    // Workspace.update() PATCH call silently DROPS
+    // the field — the helper would never fire because
+    // workspace.cross_workspace_with would always be
+    // null at read time.
+    "cross_workspace_with",
   ],
 
   validations: {

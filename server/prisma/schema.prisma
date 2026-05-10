@@ -209,6 +209,15 @@ model workspaces {
   agentModel                   String?
   queryRefusalResponse         String?
   vectorSearchMode             String?                        @default("default")
+  // vs-fork Plan 4 §C: per-workspace opt-in to
+  // cross-workspace retrieval against the firm-reference
+  // workspace. Currently only "firm-reference" is allowed
+  // (Plan 4 §C.5); future expansion is preserved by the
+  // String? shape. NULL = retrieval is matter-only (the
+  // vanilla AnythingLLM behaviour). The audit row's
+  // cross_workspace_with array surfaces this when
+  // cw_pass=true (Plan 4 §C.5 fork-side schema).
+  cross_workspace_with         String?
   workspace_users              workspace_users[]
   documents                    workspace_documents[]
   workspace_suggested_messages workspace_suggested_messages[]
