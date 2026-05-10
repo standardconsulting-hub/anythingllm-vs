@@ -393,6 +393,133 @@ describe("audit middleware — auditAndPersist", () => {
     });
   });
 
+  // vs-fork Plan 4 §C.4f: cw_pass becomes conditional, and
+  // when true the row also carries cross_workspace_with
+  // (array of source workspace slugs) + cross_workspace_chunks
+  // (count). When false neither field is emitted — Plan 6
+  // Task 6 vs-acceptance-audit asserts exactly this shape.
+  describe("cross-workspace audit shape (Plan 4 §C.4f)", () => {
+    it("cw_pass=true emits cross_workspace_with array + cross_workspace_chunks number", async () => {
+      const entry = await auditAndPersist({
+        auditDir: tmpDir,
+        request: baseRequest,
+        llmResponse: "hello",
+        retrievedChunks: [],
+        modelMeta: {
+          ...modelMeta,
+          cw_pass: true,
+          cross_workspace_with: ["firm-reference"],
+          cross_workspace_chunks: 2,
+        },
+        workflow: "targeted_query",
+        persistFn: async () => {},
+      });
+      expect(entry.cw_pass).toBe(true);
+      expect(entry.cross_workspace_with).toEqual(["firm-reference"]);
+      expect(entry.cross_workspace_chunks).toBe(2);
+      // Persisted JSONL row matches.
+      const today = new Date(entry.ts);
+      const yyyy = today.getUTCFullYear();
+      const mm = String(today.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(today.getUTCDate()).padStart(2, "0");
+      const file = path.join(tmpDir, `queries-${yyyy}-${mm}-${dd}.jsonl`);
+      const persisted = JSON.parse(fs.readFileSync(file, "utf8").trim());
+      expect(persisted.cw_pass).toBe(true);
+      expect(persisted.cross_workspace_with).toEqual(["firm-reference"]);
+      expect(persisted.cross_workspace_chunks).toBe(2);
+    });
+
+    it("cw_pass=false omits cross_workspace_with + cross_workspace_chunks entirely", async () => {
+      const entry = await auditAndPersist({
+        auditDir: tmpDir,
+        request: baseRequest,
+        llmResponse: "hello",
+        retrievedChunks: [],
+        modelMeta: {
+          ...modelMeta,
+          cw_pass: false,
+          // Even if a (mis-typed) caller passes the conditional
+          // fields, they MUST NOT leak into the row when
+          // cw_pass=false. The vs-acceptance-audit validator
+          // would otherwise see a contradiction.
+          cross_workspace_with: ["firm-reference"],
+          cross_workspace_chunks: 1,
+        },
+        workflow: "targeted_query",
+        persistFn: async () => {},
+      });
+      expect(entry.cw_pass).toBe(false);
+      expect(entry).not.toHaveProperty("cross_workspace_with");
+      expect(entry).not.toHaveProperty("cross_workspace_chunks");
+      // Persisted JSONL row also omits.
+      const today = new Date(entry.ts);
+      const yyyy = today.getUTCFullYear();
+      const mm = String(today.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(today.getUTCDate()).padStart(2, "0");
+      const file = path.join(tmpDir, `queries-${yyyy}-${mm}-${dd}.jsonl`);
+      const persisted = JSON.parse(fs.readFileSync(file, "utf8").trim());
+      expect(persisted).not.toHaveProperty("cross_workspace_with");
+      expect(persisted).not.toHaveProperty("cross_workspace_chunks");
+    });
+
+    it("cw_pass undefined defaults to false (existing baseline + new schema agreement)", async () => {
+      const entry = await auditAndPersist({
+        auditDir: tmpDir,
+        request: baseRequest,
+        llmResponse: "hello",
+        retrievedChunks: [],
+        modelMeta, // no cw_pass key
+        workflow: "agent_rejected",
+        persistFn: async () => {},
+      });
+      expect(entry.cw_pass).toBe(false);
+      expect(entry).not.toHaveProperty("cross_workspace_with");
+      expect(entry).not.toHaveProperty("cross_workspace_chunks");
+    });
+
+    it("cw_pass=true with non-array cross_workspace_with falls back to []", async () => {
+      // Defensive: only Array.isArray maps through. A
+      // mis-typed scalar (e.g. v1 of the field) gets coerced
+      // to [] rather than contaminating the JSONL with a
+      // non-array shape that downstream readers don't expect.
+      const entry = await auditAndPersist({
+        auditDir: tmpDir,
+        request: baseRequest,
+        llmResponse: "hello",
+        retrievedChunks: [],
+        modelMeta: {
+          ...modelMeta,
+          cw_pass: true,
+          cross_workspace_with: "firm-reference", // wrong: scalar
+          cross_workspace_chunks: 2,
+        },
+        workflow: "targeted_query",
+        persistFn: async () => {},
+      });
+      expect(entry.cw_pass).toBe(true);
+      expect(entry.cross_workspace_with).toEqual([]);
+      expect(entry.cross_workspace_chunks).toBe(2);
+    });
+
+    it("cw_pass=true with non-numeric cross_workspace_chunks falls back to 0", async () => {
+      const entry = await auditAndPersist({
+        auditDir: tmpDir,
+        request: baseRequest,
+        llmResponse: "hello",
+        retrievedChunks: [],
+        modelMeta: {
+          ...modelMeta,
+          cw_pass: true,
+          cross_workspace_with: ["firm-reference"],
+          cross_workspace_chunks: "two", // wrong: string
+        },
+        workflow: "targeted_query",
+        persistFn: async () => {},
+      });
+      expect(entry.cross_workspace_chunks).toBe(0);
+    });
+  });
+
   it("newAuditId has a non-regressing ms-prefix and is unique per call", async () => {
     // The format is `<12-hex ms timestamp>-<16-hex random>`. We
     // guarantee ms-prefix monotonicity (audit ordering by id at

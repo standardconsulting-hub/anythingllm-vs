@@ -23,6 +23,13 @@ const REFUSAL_CITATION_CHECK = Object.freeze({
   flagged_sentences: [],
   reason: "no_llm_completion",
 });
+// vs-fork Plan 4 §C.4e: same cross-workspace helper as
+// apiChatHandler imports — used at the LLM-completion site
+// post-vector-merge.
+const {
+  fetchFirmReferenceChunks,
+  FIRM_REFERENCE_NAMESPACE,
+} = require("./firm-reference");
 // vs-fork Plan 2.5 §D: agent surface stripped. grepAgents is
 // gone; isAgentRequest detects @agent-prefixed messages so
 // streamChatWithWorkspace can audit and reject them.
@@ -133,20 +140,61 @@ async function streamChatWithWorkspace(
       close: true,
       error: null,
     });
-    await WorkspaceChats.new({
-      workspaceId: workspace.id,
-      prompt: message,
-      response: {
-        text: textResponse,
-        sources: [],
-        type: chatMode,
-        attachments,
-        // §E.2 commit 4: refusal turn — no LLM completion to check.
-        citation_check: REFUSAL_CITATION_CHECK,
+    // vs-fork Plan 4 §C sub-plan v2 BLOCK-1: §5.3 sparse-matter
+    // refusal (browser-stream early-exit, no embeddings yet).
+    // Wrapped in auditAndPersist + persistFn so Plan 6 §D
+    // negative empty-matter probe can inspect the audit row.
+    await auditAndPersist({
+      request: {
+        body: { message: updatedMessage },
+        params: { slug: workspace.slug },
+        user: user
+          ? { id: user.id, email: user.email, username: user.username }
+          : null,
       },
-      threadId: thread?.id || null,
-      include: false,
-      user,
+      llmResponse: textResponse,
+      retrievedChunks: [],
+      modelMeta: {
+        model: null,
+        anythingllm_version: process.env.npm_package_version || null,
+        system_prompt: workspace?.openAiPrompt || "default-v1.0",
+        embedding_model: process.env.EMBEDDING_ENGINE || null,
+        chunking: {
+          chunk_tokens: workspace?.chunk_size ?? null,
+          overlap: workspace?.chunk_overlap ?? null,
+          top_k: workspace?.topN ?? null,
+        },
+        firm_reference_manifest: null,
+        tokens_in: 0,
+        tokens_out: 0,
+        latency_ms: 0,
+        cw_pass: false,
+        citation_check_shape: null,
+        streamed: true,
+      },
+      workflow: chatMode === "query" ? "targeted_query" : "open_chat",
+      persistFn: async (auditId) => {
+        const result = await WorkspaceChats.new({
+          workspaceId: workspace.id,
+          prompt: message,
+          response: {
+            text: textResponse,
+            sources: [],
+            type: chatMode,
+            attachments,
+            citation_check: REFUSAL_CITATION_CHECK,
+          },
+          threadId: thread?.id || null,
+          include: false,
+          user,
+          auditId,
+        });
+        if (!result?.chat || result.message) {
+          throw new Error(
+            `WorkspaceChats.new failed: ${result?.message || "no chat returned"}`
+          );
+        }
+      },
     });
     return;
   }
@@ -255,6 +303,30 @@ async function streamChatWithWorkspace(
   contextTexts = [...contextTexts, ...filledSources.contextTexts];
   sources = [...sources, ...vectorSearchResults.sources];
 
+  // vs-fork Plan 4 §C.4e: opt-in cross-workspace retrieval
+  // (browser-stream surface — same contract as the dev-API
+  // surfaces in apiChatHandler.js).
+  const firmRefResult = await fetchFirmReferenceChunks({
+    workspace,
+    input: message,
+    matterChunks: sources,
+    k: workspace?.topN,
+    similarityThreshold: workspace?.similarityThreshold,
+    LLMConnector,
+  });
+  if (firmRefResult.count > 0) {
+    contextTexts = [
+      ...contextTexts,
+      ...firmRefResult.chunks.map((c) => c.text),
+    ];
+    sources = [
+      ...sources,
+      ...firmRefResult.chunks
+        .map((c) => c.source)
+        .filter((s) => s != null),
+    ];
+  }
+
   // If in query mode and no context chunks are found from search, backfill, or pins -  do not
   // let the LLM try to hallucinate a response or use general knowledge and exit early
   if (chatMode === "query" && contextTexts.length === 0) {
@@ -270,20 +342,61 @@ async function streamChatWithWorkspace(
       error: null,
     });
 
-    await WorkspaceChats.new({
-      workspaceId: workspace.id,
-      prompt: message,
-      response: {
-        text: textResponse,
-        sources: [],
-        type: chatMode,
-        attachments,
-        // §E.2 commit 4: refusal turn — no LLM completion to check.
-        citation_check: REFUSAL_CITATION_CHECK,
+    // vs-fork Plan 4 §C sub-plan v2 BLOCK-1: §5.3 sparse-matter
+    // refusal (browser-stream post-vector-search). Wrapped in
+    // auditAndPersist + persistFn for Plan 6 §D negative
+    // empty-matter probe.
+    await auditAndPersist({
+      request: {
+        body: { message: updatedMessage },
+        params: { slug: workspace.slug },
+        user: user
+          ? { id: user.id, email: user.email, username: user.username }
+          : null,
       },
-      threadId: thread?.id || null,
-      include: false,
-      user,
+      llmResponse: textResponse,
+      retrievedChunks: [],
+      modelMeta: {
+        model: null,
+        anythingllm_version: process.env.npm_package_version || null,
+        system_prompt: workspace?.openAiPrompt || "default-v1.0",
+        embedding_model: process.env.EMBEDDING_ENGINE || null,
+        chunking: {
+          chunk_tokens: workspace?.chunk_size ?? null,
+          overlap: workspace?.chunk_overlap ?? null,
+          top_k: workspace?.topN ?? null,
+        },
+        firm_reference_manifest: null,
+        tokens_in: 0,
+        tokens_out: 0,
+        latency_ms: 0,
+        cw_pass: false,
+        citation_check_shape: null,
+        streamed: true,
+      },
+      workflow: chatMode === "query" ? "targeted_query" : "open_chat",
+      persistFn: async (auditId) => {
+        const result = await WorkspaceChats.new({
+          workspaceId: workspace.id,
+          prompt: message,
+          response: {
+            text: textResponse,
+            sources: [],
+            type: chatMode,
+            attachments,
+            citation_check: REFUSAL_CITATION_CHECK,
+          },
+          threadId: thread?.id || null,
+          include: false,
+          user,
+          auditId,
+        });
+        if (!result?.chat || result.message) {
+          throw new Error(
+            `WorkspaceChats.new failed: ${result?.message || "no chat returned"}`
+          );
+        }
+      },
     });
     return;
   }
@@ -377,7 +490,16 @@ async function streamChatWithWorkspace(
           overlap: workspace?.chunk_overlap ?? null,
           top_k: workspace?.topN ?? null,
         },
-        firm_reference_manifest: null,
+        // vs-fork Plan 4 §C.4e: cross-workspace audit fields
+        // populated from the firm-reference helper result
+        // (firmRefResult, captured above after the matter
+        // retrieval). manifest_sha null when count===0 per
+        // Plan 4 §C sub-plan v3 FLAG-2 / v4 FLAG-3.
+        firm_reference_manifest: firmRefResult.manifest_sha,
+        cw_pass: firmRefResult.count > 0,
+        cross_workspace_with:
+          firmRefResult.count > 0 ? [FIRM_REFERENCE_NAMESPACE] : undefined,
+        cross_workspace_chunks: firmRefResult.count,
         tokens_in: metrics?.prompt_tokens ?? null,
         tokens_out: metrics?.completion_tokens ?? null,
         latency_ms: metrics?.duration ? Math.round(metrics.duration * 1000) : null,

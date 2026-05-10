@@ -210,7 +210,15 @@ async function auditAndPersist({
       tokens_in: modelMeta.tokens_in ?? null,
       tokens_out: modelMeta.tokens_out ?? null,
       latency_ms: modelMeta.latency_ms ?? null,
-      cw_pass: false,
+      // vs-fork Plan 4 §C.4f: cw_pass becomes conditional on
+      // modelMeta.cw_pass. The LLM-completion call sites set
+      // it to `true` ONLY when the firm-reference helper
+      // returned count > 0 (i.e. firm-reference chunks
+      // actually contributed to the LLM context). Refusal
+      // and agent-rejection sites leave it false (the
+      // default modelMeta.cw_pass is undefined → `=== true`
+      // evaluates false).
+      cw_pass: modelMeta.cw_pass === true,
       workflow: workflow ?? null,
       // vs-fork Plan 4 §E.2 commit 4: citation_check is now a
       // boolean shape sourced from modelMeta.citation_check_shape
@@ -228,6 +236,22 @@ async function auditAndPersist({
           ? modelMeta.citation_check_shape
           : null,
     };
+    // vs-fork Plan 4 §C.4f: when cw_pass=true, also emit
+    // cross_workspace_with (array of source workspace slugs;
+    // currently always ["firm-reference"]) + cross_workspace_chunks
+    // (count). When cw_pass=false, neither field is emitted —
+    // vs-acceptance-audit's conditional check at Plan 6 Task 6
+    // expects exactly this shape (cross_workspace_with array
+    // present iff cw_pass=true; absent otherwise).
+    if (entry.cw_pass) {
+      entry.cross_workspace_with = Array.isArray(modelMeta.cross_workspace_with)
+        ? modelMeta.cross_workspace_with
+        : [];
+      entry.cross_workspace_chunks =
+        typeof modelMeta.cross_workspace_chunks === "number"
+          ? modelMeta.cross_workspace_chunks
+          : 0;
+    }
   } else if (kind === "upload_attempt") {
     if (!upload) throw new Error("upload_attempt requires `upload` payload");
     entry = {
