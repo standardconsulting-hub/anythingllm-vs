@@ -158,6 +158,14 @@ function convertToChatHistory(history = []) {
         feedbackScore,
         metrics: data?.metrics || {},
         ...(data?.outputs?.length > 0 ? { outputs: data.outputs } : {}),
+        // Plan 4 §E.2 commit 2: propagate citation_check from the
+        // response blob onto each emitted history entry so the
+        // frontend CitationWarning banner (commit 5) can render
+        // for replays + post-stream loads. Legacy rows lack the
+        // field; the spread is conditional so they stay clean.
+        ...(data?.citation_check !== undefined
+          ? { citation_check: data.citation_check }
+          : {}),
       },
     ]);
   }
