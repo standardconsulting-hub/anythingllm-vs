@@ -12,9 +12,16 @@ import {
   LinkSimple,
   GitlabLogo,
 } from "@phosphor-icons/react";
-import GmailLogo from "@/pages/Admin/Agents/GMailSkillPanel/gmail.png";
-import GoogleCalendarLogo from "@/pages/Admin/Agents/GoogleCalendarSkillPanel/google-calendar.png";
-import OutlookLogo from "@/pages/Admin/Agents/OutlookSkillPanel/outlook.png";
+// vs-fork Plan 2.5 §D: agent surface stripped. The
+// GMailSkillPanel / GoogleCalendarSkillPanel / OutlookSkillPanel
+// pages (and their bundled .png logos) were removed with the
+// agent runtime, but their imports + CIRCLE_IMAGES entries had
+// been left behind — silently breaking `vite build`. The agent
+// source types (gmailThread, gmailAttachment, googleCalendar,
+// outlookThread, outlookAttachment) cannot reach this surface
+// without the agent surface anyway, so removing the entries is
+// behaviour-preserving: SourceTypeCircle falls back to the
+// default file icon for any type not in CIRCLE_IMAGES.
 import { toPercentString } from "@/utils/numbers";
 import { useTranslation } from "react-i18next";
 import { useSourcesSidebar } from "../../SourcesSidebar";
@@ -32,11 +39,9 @@ const CIRCLE_ICONS = {
 };
 
 const CIRCLE_IMAGES = {
-  gmailThread: GmailLogo,
-  gmailAttachment: GmailLogo,
-  googleCalendar: GoogleCalendarLogo,
-  outlookThread: OutlookLogo,
-  outlookAttachment: OutlookLogo,
+  // Empty after the Plan 2.5 §D agent-surface strip. Kept as a
+  // map so future non-agent custom-image source types slot in
+  // without touching getCustomImage / SourceTypeCircle.
 };
 
 /**
