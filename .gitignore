@@ -13,3 +13,9 @@ yarn.lock
 
 # vs-fork: test-side-effect cache (Plan 1.5 v1.2.1)
 server/__tests__/**/models/
+
+# vs-fork: production deploy symlink — server/public points at
+# frontend/dist so the express server can serve the SPA's built
+# assets directly. Created post-build by the operator; never
+# committed.
+server/public
