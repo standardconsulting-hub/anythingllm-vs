@@ -169,6 +169,19 @@ export default {
     mobileConnections: () => {
       return `/settings/mobile-connections`;
     },
+    // vs-fork: upstream's SettingsSidebar references several path
+    // helpers that are not defined in this version. Add stubs so
+    // opening the Settings page does not crash. Navigating to any of
+    // these will produce a 404 in-app rather than crashing the React
+    // tree, which is the right failure mode for features that the
+    // vs-fork has intentionally hidden or removed.
+    telegram: () => `/settings/integrations/telegram`,
+    embedChatWidgets: () => `/settings/embed-chats`,
+    embeds: () => `/settings/embed-config`,
+    // NB: `chats` and `embedder` are already defined earlier in this
+    // object — do NOT re-declare them as stubs here, that would shadow
+    // the real definitions (embedder is an object with modelPreference
+    // and chunkingPreference; chats is a function).
   },
   // vs-fork Plan 2.5 §D: paths.agents.* removed.
   // vs-fork Plan 2.5 §C: paths.communityHub.* helpers removed.
