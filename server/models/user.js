@@ -87,9 +87,20 @@ const User = {
   },
 
   filterFields: function (user = {}) {
+    // vs-fork: strip server-internal MFA fields. `totp_last_used_counter`
+    // is a SQLite BIGINT → JS BigInt; JSON.stringify cannot serialize it
+    // and the login response crashes with HTTP 500 after a correct
+    // password match, manifesting in the frontend as a generic "Could
+    // not validate login." error that looks like wrong credentials.
+    // None of the MFA internals belong on the wire anyway.
     const {
       password: _password,
       web_push_subscription_config: _web_push_subscription_config,
+      totp_secret_ciphertext: _totp_secret_ciphertext,
+      totp_last_used_counter: _totp_last_used_counter,
+      mfa_lockout_until: _mfa_lockout_until,
+      mfa_failed_attempt_count: _mfa_failed_attempt_count,
+      mfa_failed_window_start: _mfa_failed_window_start,
       ...rest
     } = user;
     return { ...rest };
