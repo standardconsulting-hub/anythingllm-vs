@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 200" width="360" height="200" role="img" aria-label="Varney Standard — The law that changes everything.">
+  <style>
+    .vs-login-letters {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-weight: 900;
+      font-size: 130px;
+      letter-spacing: -9px;
+    }
+    .vs-login-wordmark {
+      font-family: "Space Mono", ui-monospace, Menlo, monospace;
+      font-weight: 700;
+      font-size: 11px;
+      letter-spacing: 4px;
+    }
+    .vs-login-tagline {
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      font-weight: 400;
+      font-style: italic;
+      font-size: 16px;
+    }
+  </style>
+  <text x="40" y="118" class="vs-login-letters" fill="#FAF9F6">VS</text>
+  <circle cx="248" cy="106" r="15" fill="#14B8A6" opacity="0.18"/>
+  <circle cx="248" cy="106" r="10" fill="#14B8A6"/>
+  <text x="42" y="152" class="vs-login-wordmark" fill="#FAF9F6" opacity="0.7">VARNEY STANDARD</text>
+  <text x="42" y="180" class="vs-login-tagline" fill="#FAF9F6" opacity="0.85">The law that changes everything.</text>
+</svg>

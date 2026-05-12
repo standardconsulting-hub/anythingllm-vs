@@ -29,8 +29,8 @@ export default function OnboardingHome() {
       />
 
       <div className="relative z-10 flex justify-center pt-[58px]">
-        <p className="text-white/80 light:text-slate-600 text-3xl font-semibold">
-          AnythingLLM
+        <p className="text-white/80 light:text-slate-600 text-3xl font-semibold font-display tracking-[-0.02em]">
+          VS Declaration
         </p>
       </div>
 

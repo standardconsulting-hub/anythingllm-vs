@@ -1,3 +1,8 @@
+/* VS brand overrides — see src/vs-theme/README.md. The override file
+ * uses html:root selectors (specificity 0,1,1) so it wins over
+ * AnythingLLM's :root defaults below regardless of @import ordering. */
+@import "./vs-theme/vs-overrides.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

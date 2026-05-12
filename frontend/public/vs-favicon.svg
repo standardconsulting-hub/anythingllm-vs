@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Varney Standard">
+  <!-- Favicon — designed for legibility at 16x16.
+       VS fills the canvas with minimal padding; the Point is sized
+       to be visible as a teal pixel at tab scale. -->
+  <style>
+    .vs-fav-letters {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-weight: 900;
+      font-size: 60px;
+      letter-spacing: -5px;
+    }
+  </style>
+  <rect width="64" height="64" rx="6" fill="#0A0A0A"/>
+  <text x="32" y="50" text-anchor="middle" class="vs-fav-letters" fill="#FAF9F6">VS</text>
+  <!-- The Point — large enough to register at favicon scale. -->
+  <circle cx="56" cy="48" r="7" fill="#14B8A6"/>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 80" width="140" height="80"
+     role="img" aria-label="Varney Standard"
+     preserveAspectRatio="xMinYMid meet">
+  <!-- The mark uses system-ui to render reliably inside <img> contexts.
+       On macOS this resolves to SF Pro Display Heavy, on Windows to Segoe UI
+       Black, on Linux to a heavy geometric sans. The headings on the page
+       proper use Outfit via the parent stylesheet. -->
+  <style>
+    .vs-letters {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-weight: 900;
+      font-size: 78px;
+      letter-spacing: -6px;
+    }
+  </style>
+  <text x="4" y="68" class="vs-letters" fill="#FAF9F6">VS</text>
+  <circle cx="108" cy="62" r="9" fill="#14B8A6" opacity="0.18"/>
+  <circle cx="108" cy="62" r="6" fill="#14B8A6"/>
+</svg>

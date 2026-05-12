@@ -45,7 +45,15 @@ export default {
         warn: "#854708",
         success: "#05603A",
         darker: "#F4F4F4",
-        teal: "#0BA5EC",
+        // VS brand override — Signal Teal supersedes AnythingLLM's
+        // brand teal. See src/vs-theme/README.md.
+        teal: "#14B8A6",
+        "vs-teal": "#14B8A6",
+        "vs-teal-dark": "#0D9488",
+        "vs-teal-bright": "#2DD4BF",
+        "vs-warm-white": "#FAF9F6",
+        "vs-black": "#0A0A0A",
+        "vs-off-black": "#111111",
 
         // Generic theme colors
         theme: {
@@ -170,14 +178,23 @@ export default {
           "linear-gradient(90deg, #3D4147 0%, #2C2F35 100%)",
         "menu-item-selected-gradient":
           "linear-gradient(90deg, #5B616A 0%, #3F434B 100%)",
+        // VS brand override — see src/vs-theme/README.md. The selected
+        // gradient uses Signal Teal at 22% / 12% so the active workspace
+        // clearly reads as a brand moment without overwhelming the row.
         "workspace-item-gradient":
-          "linear-gradient(90deg, #3D4147 0%, #2C2F35 100%)",
+          "linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%)",
         "workspace-item-selected-gradient":
-          "linear-gradient(90deg, #5B616A 0%, #3F434B 100%)",
-        "switch-selected": "linear-gradient(146deg, #5B616A 0%, #3F434B 100%)"
+          "linear-gradient(90deg, rgba(20,184,166,0.22) 0%, rgba(20,184,166,0.10) 100%)",
+        "menu-item-selected-gradient":
+          "linear-gradient(90deg, rgba(20,184,166,0.18) 0%, rgba(20,184,166,0.08) 100%)",
+        "switch-selected":
+          "linear-gradient(146deg, #14B8A6 0%, #0D9488 100%)"
       },
       fontFamily: {
+        // Body / default — Plus Jakarta Sans (unchanged from
+        // AnythingLLM; matches VS brand body typography).
         sans: [
+          "Plus Jakarta Sans",
           "plus-jakarta-sans",
           "ui-sans-serif",
           "system-ui",
@@ -193,6 +210,26 @@ export default {
           '"Segoe UI Emoji"',
           '"Segoe UI Symbol"',
           '"Noto Color Emoji"'
+        ],
+        // VS display — Outfit Geometric, used for headlines + the mark.
+        display: [
+          "Outfit",
+          "system-ui",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          '"Segoe UI"',
+          "sans-serif"
+        ],
+        // VS data — Space Mono, used for metadata, timestamps,
+        // identifiers, and Bates / page references.
+        mono: [
+          "Space Mono",
+          "ui-monospace",
+          '"SF Mono"',
+          "Menlo",
+          "Monaco",
+          "Consolas",
+          "monospace"
         ]
       },
       animation: {

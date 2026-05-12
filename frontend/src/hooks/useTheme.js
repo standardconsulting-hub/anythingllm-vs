@@ -28,7 +28,10 @@ export function useTheme() {
   const [theme, _setTheme] = useState(() => {
     const stored = localStorage.getItem("theme");
     if (stored === "default") return "dark"; // migrate legacy value
-    return stored || "system";
+    // VS brand override: default to dark mode on first load so the
+    // chrome reads on-brand by default. Users who prefer light or
+    // system can still set it via the theme picker.
+    return stored || "dark";
   });
 
   const [systemTheme, setSystemTheme] = useState(() =>

@@ -1,0 +1,224 @@
+/*
+ * VS Declaration brand overrides for AnythingLLM frontend.
+ *
+ * Scope of this file:
+ *   - Overrides the :root CSS variables AnythingLLM uses for its
+ *     theme so that the chrome reads as a Varney Standard product.
+ *   - Loaded once, at the top of `src/index.css`.
+ *   - Does not modify AnythingLLM's source files; only their tokens.
+ *
+ * Brand reference: ~/.claude/skills/varney-standard-brand/SKILL.md
+ *
+ * The Declaration palette:
+ *   Signal Teal   #14B8A6  primary accent
+ *   Signal Dark   #0D9488  hover
+ *   Signal Bright #2DD4BF  high-energy variant on dark
+ *   Black         #0A0A0A  primary dark
+ *   Off-Black     #111111  dark variant
+ *   Dark          #181818  rich dark surface
+ *   Grey 900      #1E1E1E  dark surface
+ *   Grey 800      #262626  subtle dark bg
+ *   Grey 500      #6B6B6B  secondary text
+ *   Warm White    #FAF9F6  primary light bg
+ *   White         #FEFEFE  pure white
+ *
+ * Typography:
+ *   Outfit          display + the VS mark
+ *   Plus Jakarta    body + long-form (already AnythingLLM default)
+ *   Space Mono      data + labels + metadata
+ */
+
+/* ---------- Dark mode (default) ----------
+ * Use html:root for specificity (0,1,1) so we win over AnythingLLM's
+ * :root (0,1,0) regardless of @import ordering. */
+html:root {
+  /* Surfaces — bring chrome to true VS black */
+  --theme-loader: #FAF9F6;
+  --theme-bg-primary: #0A0A0A;
+  --theme-bg-secondary: #111111;
+  --theme-bg-sidebar: #0A0A0A;
+  --theme-bg-container: #0A0A0A;
+  --theme-bg-chat: #111111;
+  --theme-bg-chat-input: #181818;
+  --theme-popup-menu-bg: #0A0A0A;
+
+  /* Text */
+  --theme-text-primary: #FAF9F6;
+  --theme-text-secondary: rgba(250, 249, 246, 0.65);
+  --theme-placeholder: rgba(250, 249, 246, 0.35);
+
+  /* Sidebar items */
+  --theme-sidebar-item-default: rgba(250, 249, 246, 0.06);
+  --theme-sidebar-item-selected: rgba(20, 184, 166, 0.18);
+  --theme-sidebar-item-hover: rgba(250, 249, 246, 0.1);
+  --theme-sidebar-subitem-default: rgba(250, 249, 246, 0.04);
+  --theme-sidebar-subitem-selected: rgba(20, 184, 166, 0.12);
+  --theme-sidebar-thread-selected: rgba(20, 184, 166, 0.12);
+  --theme-sidebar-subitem-hover: rgba(250, 249, 246, 0.06);
+  --theme-sidebar-border: rgba(250, 249, 246, 0.08);
+  --theme-sidebar-item-workspace-active: #14B8A6;
+  --theme-sidebar-item-workspace-inactive: rgba(250, 249, 246, 0.6);
+
+  --theme-sidebar-footer-icon: rgba(250, 249, 246, 0.1);
+  --theme-sidebar-footer-icon-fill: #FAF9F6;
+  --theme-sidebar-footer-icon-hover: rgba(20, 184, 166, 0.3);
+
+  /* Chat input + action menu */
+  --theme-chat-input-border: rgba(250, 249, 246, 0.18);
+  --theme-action-menu-bg: #181818;
+  --theme-action-menu-item-hover: rgba(20, 184, 166, 0.15);
+
+  /* Settings inputs */
+  --theme-settings-input-bg: #111111;
+  --theme-settings-input-placeholder: rgba(250, 249, 246, 0.4);
+  --theme-settings-input-active: rgba(20, 184, 166, 0.25);
+  --theme-settings-input-text: #FAF9F6;
+
+  --theme-modal-border: rgba(250, 249, 246, 0.12);
+
+  /* Buttons — Signal Teal as the firm's CTA */
+  --theme-button-primary: #14B8A6;
+  --theme-button-primary-hover: #0D9488;
+  --theme-button-cta: #2DD4BF;
+  --theme-button-text: #0A0A0A;
+  --theme-button-code-hover-text: #FAF9F6;
+  --theme-button-code-hover-bg: rgba(20, 184, 166, 0.2);
+  --theme-button-disable-hover-text: rgba(250, 249, 246, 0.4);
+  --theme-button-disable-hover-bg: rgba(250, 249, 246, 0.05);
+  --theme-button-delete-hover-text: #FAF9F6;
+  --theme-button-delete-hover-bg: rgba(240, 68, 56, 0.25);
+
+  /* File rows */
+  --theme-file-row-even: #0A0A0A;
+  --theme-file-row-odd: #111111;
+  --theme-file-row-selected-even: rgba(20, 184, 166, 0.18);
+  --theme-file-row-selected-odd: rgba(20, 184, 166, 0.1);
+  --theme-file-picker-hover: rgba(20, 184, 166, 0.18);
+
+  /* Home cards / buttons */
+  --theme-home-text: #FAF9F6;
+  --theme-home-text-secondary: rgba(250, 249, 246, 0.6);
+  --theme-home-bg-card: #181818;
+  --theme-home-bg-button: #14B8A6;
+  --theme-home-border: rgba(250, 249, 246, 0.08);
+  --theme-home-button-primary: #14B8A6;
+  --theme-home-button-primary-hover: #0D9488;
+  --theme-home-button-secondary: transparent;
+  --theme-home-button-secondary-hover: rgba(20, 184, 166, 0.1);
+  --theme-home-button-secondary-text: #FAF9F6;
+  --theme-home-button-secondary-hover-text: #14B8A6;
+  --theme-home-button-secondary-border: rgba(250, 249, 246, 0.18);
+  --theme-home-button-secondary-border-hover: #14B8A6;
+  --theme-home-update-card-bg: #181818;
+  --theme-home-update-card-hover: #1E1E1E;
+  --theme-home-update-source: rgba(250, 249, 246, 0.5);
+
+  /* Checklist */
+  --theme-checklist-item-bg: #181818;
+  --theme-checklist-item-bg-hover: #1E1E1E;
+  --theme-checklist-item-text: #FAF9F6;
+  --theme-checklist-item-completed-bg: rgba(20, 184, 166, 0.15);
+  --theme-checklist-item-completed-text: rgba(250, 249, 246, 0.7);
+  --theme-checklist-item-hover: rgba(20, 184, 166, 0.1);
+  --theme-checklist-checkbox-border: rgba(250, 249, 246, 0.3);
+  --theme-checklist-checkbox-fill: #14B8A6;
+  --theme-checklist-checkbox-text: #0A0A0A;
+  --theme-checklist-button-border: rgba(250, 249, 246, 0.2);
+  --theme-checklist-button-text: #FAF9F6;
+  --theme-checklist-button-hover-bg: rgba(20, 184, 166, 0.1);
+  --theme-checklist-button-hover-border: #14B8A6;
+
+  /* Historical chat messages — quieter */
+  --theme-attachment-bg: #181818;
+  --theme-attachment-error-bg: rgba(240, 68, 56, 0.15);
+  --theme-attachment-success-bg: rgba(20, 184, 166, 0.15);
+  --theme-attachment-text: #FAF9F6;
+  --theme-attachment-text-secondary: rgba(250, 249, 246, 0.6);
+  --theme-attachment-icon: #14B8A6;
+  --theme-attachment-icon-spinner: #14B8A6;
+  --theme-attachment-icon-spinner-bg: rgba(20, 184, 166, 0.18);
+}
+
+/* ---------- Light mode override ---------- */
+html:root[data-theme="light"], [data-theme="light"]:root {
+  --theme-bg-primary: #FAF9F6;
+  --theme-bg-secondary: #FEFEFE;
+  --theme-bg-sidebar: #FAF9F6;
+  --theme-bg-container: #FAF9F6;
+  --theme-bg-chat: #FEFEFE;
+  --theme-bg-chat-input: #FAF9F6;
+  --theme-popup-menu-bg: #FEFEFE;
+  --theme-text-primary: #0A0A0A;
+  --theme-text-secondary: rgba(10, 10, 10, 0.65);
+  --theme-placeholder: rgba(10, 10, 10, 0.35);
+  --theme-sidebar-border: rgba(10, 10, 10, 0.08);
+  --theme-modal-border: rgba(10, 10, 10, 0.12);
+  --theme-button-text: #FAF9F6;
+}
+
+/* ---------- Typography polish ---------- */
+
+/* Headings and the workspace name in the sidebar use Outfit. */
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Outfit", "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* Data + metadata in Space Mono.
+ * Targets: timestamps, vector counts, identifiers, audit metadata. */
+.vs-mono,
+time,
+code:not(pre code) {
+  font-family: "Space Mono", ui-monospace, "SF Mono", Menlo, monospace !important;
+  font-feature-settings: "tnum" 1;
+}
+
+/* The Point as a bullet replacement inside chat/markdown surfaces. */
+.markdown-body ul:not(.no-vs-bullet) {
+  list-style: none;
+  padding-left: 1.5rem;
+}
+.markdown-body ul:not(.no-vs-bullet) > li {
+  position: relative;
+}
+.markdown-body ul:not(.no-vs-bullet) > li::before {
+  content: "";
+  display: inline-block;
+  position: absolute;
+  left: -1.1rem;
+  top: 0.65em;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: #14B8A6;
+  box-shadow: 0 0 6px rgba(20, 184, 166, 0.35);
+}
+
+/* Selection colour — Signal Teal at 25% */
+::selection {
+  background: rgba(20, 184, 166, 0.32);
+  color: inherit;
+}
+
+/* Focus rings — Signal Teal */
+*:focus-visible {
+  outline: 2px solid #14B8A6;
+  outline-offset: 2px;
+}
+
+/* The scrollbar (where browser supports it) reads in VS grey/teal */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(20, 184, 166, 0.3) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(20, 184, 166, 0.25);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(20, 184, 166, 0.5);
+}

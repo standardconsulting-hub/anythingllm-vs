@@ -15,6 +15,8 @@ import { useSidebarToggle, ToggleSidebarButton } from "./SidebarToggle";
 import SearchBox from "./SearchBox";
 import { Tooltip } from "react-tooltip";
 import { createPortal } from "react-dom";
+// VS brand override — see src/vs-theme/README.md.
+import VSBrandHeader from "@/vs-theme/VSBrandHeader";
 
 export default function Sidebar() {
   const { user } = useUser();
@@ -45,13 +47,9 @@ export default function Sidebar() {
         <div className="overflow-hidden h-full">
           <div className="flex shrink-0 w-full justify-center my-[18px]">
             <div className="flex w-[250px] min-w-[250px]">
-              <Link to={paths.home()} aria-label="Home">
-                <img
-                  src={logo}
-                  alt="Logo"
-                  className={`rounded max-h-[24px] object-contain transition-opacity duration-500 ${showSidebar ? "opacity-100" : "opacity-0"}`}
-                />
-              </Link>
+              {/* VS brand override — title + theme toggle. The original
+                  AnythingLLM Link/img is now inside VSBrandHeader. */}
+              <VSBrandHeader showSidebar={showSidebar} />
             </div>
           </div>
           <div

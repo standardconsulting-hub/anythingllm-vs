@@ -16,6 +16,8 @@ import SettingsButton from "../SettingsButton";
 import { isMobile } from "react-device-detect";
 import { Tooltip } from "react-tooltip";
 import { Link } from "react-router-dom";
+// VS brand override — see src/vs-theme/README.md.
+import VSThemeToggle from "@/vs-theme/VSThemeToggle";
 
 export const MAX_ICONS = 3;
 export const ICON_COMPONENTS = {
@@ -98,6 +100,8 @@ export default function Footer() {
             </Link>
           </div>
           {!isMobile && <SettingsButton />}
+          {/* VS brand override — theme toggle (light/dark). */}
+          <VSThemeToggle />
         </div>
         <Tooltip
           id="footer-item"

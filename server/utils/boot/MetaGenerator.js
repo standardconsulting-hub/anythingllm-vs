@@ -23,19 +23,30 @@ class MetaGenerator {
   /** @type {MetaGenerator|null} */
   static _instance = null;
 
+  // vs-fork: cache-bust via query string was tried but broke ES module
+  // dedup — lazy chunks import "../index.js" without the query, so the
+  // browser loaded the bundle twice (once with the query, once without)
+  // and instantiated two React copies. Reverted. To force a refresh on
+  // deploy, instruct users to hard-refresh (Cmd+Shift+R) or clear cache.
+
   /** @type {MetaTagDefinition[]|null} */
   #customConfig = null;
 
+  // vs-fork: brand defaults overridden for VS Declaration.
+  // See frontend/src/vs-theme/README.md.
   #defaultManifest = {
-    name: "AnythingLLM",
-    short_name: "AnythingLLM",
+    name: "VS Declaration — Varney Standard",
+    short_name: "VS Declaration",
     display: "standalone",
     orientation: "portrait",
     start_url: "/",
+    theme_color: "#0A0A0A",
+    background_color: "#0A0A0A",
     icons: [
       {
-        src: "/favicon.png",
+        src: "/vs-favicon.svg",
         sizes: "any",
+        type: "image/svg+xml",
       },
     ],
   };
@@ -53,27 +64,27 @@ class MetaGenerator {
     return [
       {
         tag: "link",
-        props: { type: "image/svg+xml", href: "/favicon.png" },
+        props: { type: "image/svg+xml", href: "/vs-favicon.svg" },
         content: null,
       },
       {
         tag: "title",
         props: null,
-        content: "AnythingLLM | Your personal LLM trained on anything",
+        content: "VS Declaration — Varney Standard",
       },
 
       {
         tag: "meta",
         props: {
           name: "title",
-          content: "AnythingLLM | Your personal LLM trained on anything",
+          content: "VS Declaration — Varney Standard",
         },
       },
       {
         tag: "meta",
         props: {
           description: "title",
-          content: "AnythingLLM | Your personal LLM trained on anything",
+          content: "VS Declaration — Varney Standard",
         },
       },
 
@@ -81,28 +92,27 @@ class MetaGenerator {
       { tag: "meta", props: { property: "og:type", content: "website" } },
       {
         tag: "meta",
-        props: { property: "og:url", content: "https://anythingllm.com" },
+        props: { property: "og:url", content: "https://varneystandard.co.uk" },
       },
       {
         tag: "meta",
         props: {
           property: "og:title",
-          content: "AnythingLLM | Your personal LLM trained on anything",
+          content: "VS Declaration — Varney Standard",
         },
       },
       {
         tag: "meta",
         props: {
           property: "og:description",
-          content: "AnythingLLM | Your personal LLM trained on anything",
+          content: "VS Declaration — Varney Standard",
         },
       },
       {
         tag: "meta",
         props: {
           property: "og:image",
-          content:
-            "https://raw.githubusercontent.com/Mintplex-Labs/anything-llm/master/images/promo.png",
+          content: "/vs-favicon.svg",
         },
       },
 
@@ -113,33 +123,32 @@ class MetaGenerator {
       },
       {
         tag: "meta",
-        props: { property: "twitter:url", content: "https://anythingllm.com" },
+        props: { property: "twitter:url", content: "https://varneystandard.co.uk" },
       },
       {
         tag: "meta",
         props: {
           property: "twitter:title",
-          content: "AnythingLLM | Your personal LLM trained on anything",
+          content: "VS Declaration — Varney Standard",
         },
       },
       {
         tag: "meta",
         props: {
           property: "twitter:description",
-          content: "AnythingLLM | Your personal LLM trained on anything",
+          content: "VS Declaration — Varney Standard",
         },
       },
       {
         tag: "meta",
         props: {
           property: "twitter:image",
-          content:
-            "https://raw.githubusercontent.com/Mintplex-Labs/anything-llm/master/images/promo.png",
+          content: "/vs-favicon.svg",
         },
       },
 
-      { tag: "link", props: { rel: "icon", href: "/favicon.png" } },
-      { tag: "link", props: { rel: "apple-touch-icon", href: "/favicon.png" } },
+      { tag: "link", props: { rel: "icon", href: "/vs-favicon.svg" } },
+      { tag: "link", props: { rel: "apple-touch-icon", href: "/vs-favicon.svg" } },
 
       // PWA specific tags
       {
@@ -188,12 +197,13 @@ class MetaGenerator {
   }
 
   #validUrl(faviconUrl = null) {
-    if (faviconUrl === null) return "/favicon.png";
+    // vs-fork: VS Declaration favicon default.
+    if (faviconUrl === null) return "/vs-favicon.svg";
     try {
       const url = new URL(faviconUrl);
       return url.toString();
     } catch {
-      return "/favicon.png";
+      return "/vs-favicon.svg";
     }
   }
 
@@ -315,7 +325,6 @@ class MetaGenerator {
             <link rel="icon" type="image/svg+xml" href="/vs-favicon.svg">
             <script type="module" crossorigin src="/index.js"></script>
             <link rel="stylesheet" href="/index.css">
-            <link rel="stylesheet" href="/vs-overrides.css">
           </head>
           <body>
             <div id="root" class="h-screen"></div>
