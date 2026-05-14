@@ -187,8 +187,23 @@ async function chatSync({
 
   // Process slash commands
   // Since preset commands are not supported in API calls, we can just process the message here
+  const originalMessage = message;
   const processedMessage = await grepAllSlashCommands(message);
   message = processedMessage;
+
+  // vs-fork Plan 4 §D.3: derive the audit workflow tag from a
+  // leading slash command (e.g. `/summary ...` → "summary") so
+  // the dev-API non-streaming path tags presets in the same shape
+  // stream.js does. grepAllSlashCommands has just rewritten the
+  // message; we read the leading token from the captured original.
+  // Default falls back to the chatMode-derived baseline.
+  const slashWorkflowToken = (originalMessage || "").trim().split(/\s+/)[0] || "";
+  const workflow =
+    slashWorkflowToken.startsWith("/") && processedMessage !== originalMessage
+      ? slashWorkflowToken.replace(/^\/+/, "")
+      : chatMode === "query"
+        ? "targeted_query"
+        : "open_chat";
 
   // vs-fork Plan 2.5 §D: agent mode is disabled. The agent
   // runtime was removed; @agent-prefixed messages are
@@ -288,7 +303,7 @@ async function chatSync({
         cw_pass: false,
         citation_check_shape: null,
       },
-      workflow: chatMode === "query" ? "targeted_query" : "open_chat",
+      workflow,
       persistFn: async (auditId) => {
         const result = await WorkspaceChats.new({
           workspaceId: workspace.id,
@@ -499,7 +514,7 @@ async function chatSync({
         // for the frontend banner).
         citation_check_shape: null,
       },
-      workflow: chatMode === "query" ? "targeted_query" : "open_chat",
+      workflow,
       persistFn: async (auditId) => {
         const result = await WorkspaceChats.new({
           workspaceId: workspace.id,
@@ -624,7 +639,7 @@ async function chatSync({
         // is set on modelMeta but ignored at JSONL emission.
         citation_check_shape: citationCheck.ok,
       },
-      workflow: chatMode === "query" ? "targeted_query" : "open_chat",
+      workflow,
       persistFn: async (auditId) => {
         // BLOCK 3 fix: audit_id lands on the row atomically via
         // WorkspaceChats.new — no second update.
@@ -741,8 +756,20 @@ async function streamChat({
 
   // Check for and process slash commands
   // Since preset commands are not supported in API calls, we can just process the message here
+  const originalMessage = message;
   const processedMessage = await grepAllSlashCommands(message);
   message = processedMessage;
+
+  // vs-fork Plan 4 §D.3: derive the audit workflow tag from a
+  // leading slash command. Mirror of the chatSync block above —
+  // see that comment for the rationale.
+  const slashWorkflowToken = (originalMessage || "").trim().split(/\s+/)[0] || "";
+  const workflow =
+    slashWorkflowToken.startsWith("/") && processedMessage !== originalMessage
+      ? slashWorkflowToken.replace(/^\/+/, "")
+      : chatMode === "query"
+        ? "targeted_query"
+        : "open_chat";
 
   // vs-fork Plan 2.5 §D: agent mode is disabled. Same shape as
   // chatSync's rejection above, but writes a single chunk to
@@ -850,7 +877,7 @@ async function streamChat({
         citation_check_shape: null,
         streamed: true,
       },
-      workflow: chatMode === "query" ? "targeted_query" : "open_chat",
+      workflow,
       persistFn: async (auditId) => {
         const result = await WorkspaceChats.new({
           workspaceId: workspace.id,
@@ -1055,7 +1082,7 @@ async function streamChat({
         citation_check_shape: null,
         streamed: true,
       },
-      workflow: chatMode === "query" ? "targeted_query" : "open_chat",
+      workflow,
       persistFn: async (auditId) => {
         const result = await WorkspaceChats.new({
           workspaceId: workspace.id,
@@ -1180,7 +1207,7 @@ async function streamChat({
           // wires reader).
           citation_check_shape: citationCheck.ok,
         },
-        workflow: chatMode === "query" ? "targeted_query" : "open_chat",
+        workflow,
         persistFn: async (auditId) => {
           // BLOCK 1 + BLOCK 3 fix: see chatSync above.
           const result = await WorkspaceChats.new({
