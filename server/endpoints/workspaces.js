@@ -1271,6 +1271,91 @@ function workspaceEndpoints(app) {
     }
   );
 
+  // vs-fork Plan 4 §G.3 — export a single chat thread to a
+  // markdown file under /Vault/Matters/<id>/outputs/.
+  //
+  // Plan §G.3 originally prescribed a /v1 route under
+  // validApiKey; the frontend Export button uses session auth,
+  // so the route lives here on the session-auth side. The CLI
+  // counterpart (scripts/vs-export-output) talks to the v1
+  // chats endpoint directly with the admin API key — no server
+  // endpoint needed for that path.
+  //
+  // execFile (not exec) means slug / chatId / overrideSlug
+  // arguments are passed positionally and never interpreted by
+  // a shell. Inputs are also regex-validated before the call.
+  app.post(
+    "/workspace/:slug/export-chat/:chatId",
+    [validatedRequest, flexUserRoleValid([ROLES.all]), validWorkspaceSlug],
+    async (request, response) => {
+      try {
+        const { slug, chatId } = request.params;
+        const { slug: filenameSlugOverride } = request.query;
+
+        const slugSafe = String(slug ?? "");
+        const chatIdSafe = String(chatId ?? "");
+        if (!/^[a-z0-9-]{1,100}$/.test(slugSafe)) {
+          return response
+            .status(400)
+            .json({ error: "slug must be lowercase alphanumeric + dashes" });
+        }
+        if (!/^[0-9]{1,12}$/.test(chatIdSafe)) {
+          return response
+            .status(400)
+            .json({ error: "chatId must be a positive integer" });
+        }
+
+        const scriptPath =
+          process.env.VS_EXPORT_SCRIPT_PATH ||
+          "/Users/davidstandardstudio/Projects/vs-declaration-plan-1/scripts/vs-export-output";
+
+        const args = [slugSafe, chatIdSafe];
+        if (filenameSlugOverride !== undefined) {
+          const overrideStr = String(filenameSlugOverride);
+          if (!/^[a-z0-9-]{1,60}$/.test(overrideStr)) {
+            return response.status(400).json({
+              error:
+                "slug query param must be lowercase alphanumeric + dashes",
+            });
+          }
+          args.push("--slug", overrideStr);
+        }
+
+        const { execFile } = require("node:child_process");
+        execFile(
+          scriptPath,
+          args,
+          { timeout: 30_000, maxBuffer: 1024 * 1024 },
+          (error, stdout, stderr) => {
+            if (error) {
+              console.error(
+                "export-chat shell-out failed:",
+                error.message,
+                stderr
+              );
+              const code = typeof error.code === "number" ? error.code : 500;
+              const status = code === 65 ? 404 : code === 64 ? 400 : 500;
+              return response.status(status).json({
+                error:
+                  status === 404
+                    ? `chat ${chatIdSafe} not found in workspace ${slugSafe}`
+                    : "export failed",
+                stderr: stderr?.toString().slice(0, 500) || "",
+              });
+            }
+            response.status(200).json({
+              ok: true,
+              stdout: stdout.toString().trim(),
+            });
+          }
+        );
+      } catch (e) {
+        console.error("export-chat handler error:", e.message, e);
+        response.sendStatus(500).end();
+      }
+    }
+  );
+
   // Parsed Files in separate endpoint just to keep the workspace endpoints clean
   workspaceParsedFilesEndpoints(app);
 }

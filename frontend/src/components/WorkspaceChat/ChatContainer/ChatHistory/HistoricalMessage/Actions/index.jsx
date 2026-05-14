@@ -5,6 +5,9 @@ import Workspace from "@/models/workspace";
 import { EditMessageAction } from "./EditMessage";
 import RenderMetrics from "./RenderMetrics";
 import ActionMenu from "./ActionMenu";
+// vs-fork Plan 4 §G.3: Export to /Vault button on assistant
+// messages. Renders only when chatId && role !== "user".
+import ExportButton from "./ExportButton";
 import { useTranslation } from "react-i18next";
 
 const Actions = ({
@@ -59,6 +62,9 @@ const Actions = ({
               tooltipContent={t("chat_window.good_response")}
               IconComponent={ThumbsUp}
             />
+          )}
+          {chatId && role !== "user" && !isEditing && (
+            <ExportButton chatId={chatId} slug={slug} role={role} />
           )}
           <ActionMenu
             chatId={chatId}
