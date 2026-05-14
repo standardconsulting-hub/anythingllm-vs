@@ -3,22 +3,30 @@
 // Designed to run AFTER an auth middleware (validatedRequest or
 // requireFullAuth) that has already populated res.locals.session.
 // On each authed request:
-//   - if last_activity_at > 15 min ago  → revoke session, 401
-//                                         { session_expired,
-//                                           needs_totp: true }
+//   - if last_activity_at > SESSION_IDLE_MS ago → revoke session,
+//                                                 401 { session_expired,
+//                                                 needs_totp: true }
 //   - else                              → touch last_activity_at,
 //                                         pass through
 //   - if no session in res.locals       → pass through (route is
 //                                         public — idle-timeout
 //                                         doesn't apply)
 //
-// The 15-minute window is enforced server-side; clients cannot
-// extend it. Per-session, not per-user — one stale browser tab
-// does not keep a different active tab alive.
+// The window is enforced server-side; clients cannot extend it.
+// Per-session, not per-user — one stale browser tab does not keep
+// a different active tab alive.
+//
+// Operator note: Plan 1.5's default was 15 minutes. Widened to
+// 4 hours on 2026-05-12 to match the working pattern at VS — fee-
+// earners run the tool across a half-day's drafting session and
+// were being kicked out mid-task. The trade-off: an unlocked
+// screen gives an opportunistic intruder a 4-hour window rather
+// than 15 min. Acceptable in the controlled office; reconsider if
+// the deployment ever moves to a less-controlled environment.
 
 const { UserSession } = require("../../models/userSession");
 
-const SESSION_IDLE_MS = 15 * 60 * 1000;
+const SESSION_IDLE_MS = 4 * 60 * 60 * 1000;
 
 async function idleTimeout(req, res, next) {
   const session = res.locals?.session;
